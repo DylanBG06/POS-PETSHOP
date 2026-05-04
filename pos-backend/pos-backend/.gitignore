@@ -1,0 +1,29 @@
+# Base de datos local (cada máquina tiene la suya)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Clave secreta JWT (se genera por máquina)
+.secret_key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+*.egg-info/
+
+# Backups automáticos
+backups/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
