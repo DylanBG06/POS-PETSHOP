@@ -52,6 +52,7 @@ class CategoriaOut(CategoriaBase):
 # ---------- PRODUCTOS ----------
 TipoVenta = Literal["unidad", "peso"]
 UnidadMedida = Literal["kg", "g"]
+TipoProducto = Literal["COMPRABLE", "DERIVADO"]
 
 
 class ProductoBase(BaseModel):
@@ -66,6 +67,9 @@ class ProductoBase(BaseModel):
     categoria_id: Optional[int] = None
     fecha_vencimiento: Optional[date] = None
     activo: bool = True
+    tipo_producto: TipoProducto = "COMPRABLE"
+    id_padre: Optional[int] = None
+    factor_conversion: Optional[float] = None
 
 
 class ProductoCreate(ProductoBase):
@@ -84,14 +88,23 @@ class ProductoUpdate(BaseModel):
     categoria_id: Optional[int] = None
     fecha_vencimiento: Optional[date] = None
     activo: Optional[bool] = None
+    tipo_producto: Optional[TipoProducto] = None
+    id_padre: Optional[int] = None
+    factor_conversion: Optional[float] = None
 
 
 class ProductoOut(ProductoBase):
     id: int
     categoria: Optional[CategoriaOut] = None
+    nombre_padre: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class DesglosarRequest(BaseModel):
+    cantidad_padres: int = Field(gt=0, description="Cuántos sacos/padres convertir")
+    hijo_id: int = Field(gt=0, description="ID del producto hijo destino")
 
 
 # ---------- VENTAS ----------

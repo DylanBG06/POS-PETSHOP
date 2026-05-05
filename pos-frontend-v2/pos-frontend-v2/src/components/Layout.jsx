@@ -19,7 +19,7 @@ export default function Layout({ children }) {
   const navigate = useNavigate()
   const menuRef = useRef(null)
 
-  const usuario = JSON.parse(localStorage.getItem('pos_usuario') || '{}')
+  const usuario = JSON.parse(sessionStorage.getItem('pos_usuario') || '{}')
 
   useEffect(() => {
     configAPI.obtener('nombre_negocio').then(c => {
@@ -40,8 +40,8 @@ export default function Layout({ children }) {
 
   const cerrarSesion = () => {
     if (confirm('¿Cerrar sesión?')) {
-      localStorage.removeItem('pos_token')
-      localStorage.removeItem('pos_usuario')
+      sessionStorage.removeItem('pos_token')
+      sessionStorage.removeItem('pos_usuario')
       navigate('/login', { replace: true })
     }
   }

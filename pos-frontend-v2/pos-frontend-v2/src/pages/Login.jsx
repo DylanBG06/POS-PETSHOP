@@ -12,7 +12,7 @@ export default function Login() {
 
   // Si ya hay sesión, redirigir
   useEffect(() => {
-    if (localStorage.getItem('pos_token')) {
+    if (sessionStorage.getItem('pos_token')) {
       navigate('/ventas', { replace: true })
     }
   }, [navigate])
@@ -27,8 +27,8 @@ export default function Login() {
     setCargando(true)
     try {
       const data = await authAPI.login(username.trim(), password)
-      localStorage.setItem('pos_token', data.access_token)
-      localStorage.setItem('pos_usuario', JSON.stringify(data.usuario))
+      sessionStorage.setItem('pos_token', data.access_token)
+      sessionStorage.setItem('pos_usuario', JSON.stringify(data.usuario))
       toast.success(`Hola ${data.usuario.nombre_completo || data.usuario.username}`)
       navigate('/ventas', { replace: true })
     } catch (err) {

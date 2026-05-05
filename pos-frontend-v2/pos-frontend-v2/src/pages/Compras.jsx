@@ -21,7 +21,7 @@ export default function Compras() {
     try {
       const [c, p] = await Promise.all([
         comprasAPI.listar({ limit: 50 }),
-        productosAPI.listar({ solo_activos: true }),
+        productosAPI.listar({ solo_activos: true, solo_comprables: true }),
       ])
       setCompras(c)
       setProductos(p)
@@ -157,6 +157,7 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
       const creado = await productosAPI.crear({
         nombre: nuevoProducto.nombre.trim(),
         tipo_venta: 'unidad',
+        tipo_producto: 'COMPRABLE',
         precio_venta: parseFloat(nuevoProducto.precio_venta),
         costo: parseFloat(nuevoProducto.costo) || 0,
         stock: 0,

@@ -7,7 +7,7 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('pos_token')
+  const token = sessionStorage.getItem('pos_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -16,8 +16,8 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('pos_token')
-      localStorage.removeItem('pos_usuario')
+      sessionStorage.removeItem('pos_token')
+      sessionStorage.removeItem('pos_usuario')
       if (window.location.pathname !== '/login') window.location.href = '/login'
     }
     const detail = err.response?.data?.detail || err.message || 'Error desconocido'
@@ -39,6 +39,8 @@ export const productosAPI = {
   crear: (data) => api.post('/productos/', data).then(r => r.data),
   actualizar: (id, data) => api.put(`/productos/${id}`, data).then(r => r.data),
   eliminar: (id) => api.delete(`/productos/${id}`),
+  desglosar: (id, cantidad_padres, hijo_id) => api.post(`/productos/${id}/desglosar`, { cantidad_padres, hijo_id }).then(r => r.data),
+  hijos: (id) => api.get(`/productos/${id}/hijos`).then(r => r.data),
   stockBajo: () => api.get('/productos/alertas/stock-bajo').then(r => r.data),
   porVencer: (dias = 30) => api.get('/productos/alertas/por-vencer', { params: { dias } }).then(r => r.data),
 }

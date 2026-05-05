@@ -38,17 +38,12 @@ class Producto(Base):
     codigo = Column(String(50), unique=True, index=True, nullable=True)
     nombre = Column(String(100), nullable=False, index=True)
 
-    # Tipo de venta:
-    # - 'unidad': se vende por unidades enteras
-    # - 'peso': se vende por peso variable (kg o g)
     tipo_venta = Column(String(10), nullable=False, default="unidad")
-    unidad_medida = Column(String(5), nullable=True)  # 'kg', 'g', None para unidad
+    unidad_medida = Column(String(5), nullable=True)
 
-    # precio_venta: si tipo='peso', es precio por kg/g según unidad_medida
     precio_venta = Column(Float, nullable=False)
     costo = Column(Float, nullable=False, default=0)
 
-    # Stock como Float para soportar productos por peso (28.5 kg)
     stock = Column(Float, nullable=False, default=0)
     stock_minimo = Column(Float, nullable=False, default=5)
 
@@ -56,9 +51,19 @@ class Producto(Base):
     fecha_vencimiento = Column(Date, nullable=True)
     activo = Column(Boolean, default=True)
 
+    # --- Jerarquía padre-hijo ---
+    # COMPRABLE = se compra al proveedor (saco), DERIVADO = se genera del padre (bolsita)
+    tipo_producto = Column(String(20), nullable=False, default="COMPRABLE")
+    # ID del producto padre (NULL si es padre/independiente)
+    id_padre = Column(Integer, ForeignKey("productos.id"), nullable=True)
+    # Cuántas unidades del hijo salen de 1 padre (ej: 30 bolsas de 1kg de un saco de 30kg)
+    factor_conversion = Column(Float, nullable=True)
+
     categoria = relationship("Categoria", back_populates="productos")
     detalles_venta = relationship("DetalleVenta", back_populates="producto")
     detalles_compra = relationship("DetalleCompra", back_populates="producto")
+    # Relación: un producto puede tener hijos derivados
+    hijos = relationship("Producto", foreign_keys=[id_padre])
 
 
 class Venta(Base):

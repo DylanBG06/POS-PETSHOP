@@ -201,7 +201,7 @@ function SeccionCuenta() {
   const [cambiando, setCambiando] = useState(false)
   const [exito, setExito] = useState(false)
 
-  const usuario = JSON.parse(localStorage.getItem('pos_usuario') || '{}')
+  const usuario = JSON.parse(sessionStorage.getItem('pos_usuario') || '{}')
 
   const cambiar = async () => {
     if (!actual || !nueva) return toast.error('Completá los campos')
