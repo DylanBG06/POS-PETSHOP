@@ -18,9 +18,7 @@ api.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem('pos_token')
       localStorage.removeItem('pos_usuario')
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login'
-      }
+      if (window.location.pathname !== '/login') window.location.href = '/login'
     }
     const detail = err.response?.data?.detail || err.message || 'Error desconocido'
     return Promise.reject({ message: detail, status: err.response?.status })
@@ -28,8 +26,7 @@ api.interceptors.response.use(
 )
 
 export const authAPI = {
-  login: (username, password) =>
-    api.post('/auth/login', { username, password }).then(r => r.data),
+  login: (username, password) => api.post('/auth/login', { username, password }).then(r => r.data),
   yo: () => api.get('/auth/yo').then(r => r.data),
   cambiarPassword: (password_actual, password_nueva) =>
     api.post('/auth/cambiar-password', { password_actual, password_nueva }).then(r => r.data),
@@ -63,6 +60,7 @@ export const comprasAPI = {
   listar: (params = {}) => api.get('/compras/', { params }).then(r => r.data),
   obtener: (id) => api.get(`/compras/${id}`).then(r => r.data),
   crear: (data) => api.post('/compras/', data).then(r => r.data),
+  eliminar: (id) => api.delete(`/compras/${id}`),
 }
 
 export const cajaAPI = {
@@ -70,6 +68,7 @@ export const cajaAPI = {
   resumenFecha: (fecha) => api.get(`/caja/resumen/${fecha}`).then(r => r.data),
   cerrar: (data) => api.post('/caja/cerrar', data).then(r => r.data),
   cierres: (limit = 30) => api.get('/caja/cierres', { params: { limit } }).then(r => r.data),
+  eliminarCierre: (id) => api.delete(`/caja/cierres/${id}`),
 }
 
 export const reportesAPI = {

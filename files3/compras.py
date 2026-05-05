@@ -1,5 +1,7 @@
 """
 Endpoints de compras (reposición de inventario).
+Cada compra aumenta automáticamente el stock de los productos
+y guarda el costo unitario.
 """
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -9,20 +11,20 @@ from sqlalchemy.orm import Session, joinedload
 from database import get_db
 import models
 import schemas
-from security import get_current_user
 
-router = APIRouter(
-    prefix="/compras",
-    tags=["Compras"],
-    dependencies=[Depends(get_current_user)],
-)
+router = APIRouter(prefix="/compras", tags=["Compras"])
 
 
 @router.post("/", response_model=schemas.CompraOut, status_code=201)
 def registrar_compra(compra: schemas.CompraCreate, db: Session = Depends(get_db)):
+    """
+    Registra una compra y aumenta el stock automáticamente.
+    También actualiza el costo del producto al último costo de compra.
+    """
     if not compra.detalles:
         raise HTTPException(status_code=400, detail="La compra debe tener al menos un producto")
 
+    # Cargar productos
     ids_productos = [d.producto_id for d in compra.detalles]
     productos = {
         p.id: p for p in db.query(models.Producto).filter(
@@ -40,13 +42,12 @@ def registrar_compra(compra: schemas.CompraCreate, db: Session = Depends(get_db)
                 detail=f"Producto con id {detalle.producto_id} no encontrado"
             )
 
-        cantidad = float(detalle.cantidad)
-        subtotal = round(detalle.costo_unit * cantidad, 2)
+        subtotal = round(detalle.costo_unit * detalle.cantidad, 2)
         total_compra += subtotal
 
         detalles_a_crear.append({
             "producto_id": producto.id,
-            "cantidad": cantidad,
+            "cantidad": detalle.cantidad,
             "costo_unit": detalle.costo_unit,
         })
 
@@ -61,9 +62,10 @@ def registrar_compra(compra: schemas.CompraCreate, db: Session = Depends(get_db)
 
     for d in detalles_a_crear:
         db.add(models.DetalleCompra(compra_id=db_compra.id, **d))
+        # Aumentar stock y actualizar costo
         producto = productos[d["producto_id"]]
         producto.stock += d["cantidad"]
-        producto.costo = d["costo_unit"]
+        producto.costo = d["costo_unit"]  # Costo del último ingreso
 
     db.commit()
     db.refresh(db_compra)
@@ -115,30 +117,3 @@ def obtener_compra(compra_id: int, db: Session = Depends(get_db)):
     if not compra:
         raise HTTPException(status_code=404, detail="Compra no encontrada")
     return compra
-
-
-@router.delete("/{compra_id}", status_code=204)
-def eliminar_compra(compra_id: int, db: Session = Depends(get_db)):
-    """
-    Eliminar una compra y REVERTIR el stock.
-    Cada detalle de la compra resta la cantidad del stock del producto.
-    """
-    compra = (
-        db.query(models.Compra)
-        .options(joinedload(models.Compra.detalles))
-        .filter(models.Compra.id == compra_id)
-        .first()
-    )
-    if not compra:
-        raise HTTPException(status_code=404, detail="Compra no encontrada")
-
-    # Revertir stock
-    for detalle in compra.detalles:
-        producto = db.query(models.Producto).filter(
-            models.Producto.id == detalle.producto_id
-        ).first()
-        if producto:
-            producto.stock = max(0, producto.stock - detalle.cantidad)
-
-    db.delete(compra)
-    db.commit()

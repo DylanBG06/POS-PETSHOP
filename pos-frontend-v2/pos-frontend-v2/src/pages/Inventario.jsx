@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Search, Plus, Edit2, Trash2, Package, AlertTriangle, Calendar, DollarSign, Scale } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
+import { Search, Plus, Edit2, Trash2, Package, AlertTriangle, Calendar, DollarSign } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { productosAPI, categoriasAPI } from '../services/api'
-import { formatColones, formatFecha, estadoProducto, formatStock, labelPrecio } from '../utils/format'
+import { formatColones, formatFecha, estadoProducto } from '../utils/format'
 import Modal from '../components/Modal'
 
 const estadoBadge = {
@@ -11,12 +11,19 @@ const estadoBadge = {
   vence: 'bg-red-100 text-red-800',
   inactivo: 'bg-slate-100 text-slate-600',
 }
-
 const filaResaltado = {
-  bajo: 'bg-amber-50/50',
-  vence: 'bg-red-50/50',
-  ok: '',
-  inactivo: 'opacity-50',
+  bajo: 'bg-amber-50/50', vence: 'bg-red-50/50', ok: '', inactivo: 'opacity-50',
+}
+
+// Field FUERA del modal para evitar que se recree en cada render (fix foco)
+function Field({ label, children, hint }) {
+  return (
+    <div>
+      <div className="text-xs text-slate-500 mb-1">{label}</div>
+      {children}
+      {hint && <div className="text-xs text-slate-400 mt-1">{hint}</div>}
+    </div>
+  )
 }
 
 export default function Inventario() {
@@ -28,7 +35,7 @@ export default function Inventario() {
   const [modalAbierto, setModalAbierto] = useState(false)
   const [editando, setEditando] = useState(null)
 
-  const cargar = async () => {
+  const cargar = useCallback(async () => {
     setLoading(true)
     try {
       const [prods, cats] = await Promise.all([
@@ -40,18 +47,17 @@ export default function Inventario() {
       ])
       setProductos(prods)
       setCategorias(cats)
-    } catch (err) {
+    } catch {
       toast.error('Error al cargar productos')
     } finally {
       setLoading(false)
     }
-  }
+  }, [busqueda, filtroCategoria])
 
   useEffect(() => {
-    const t = setTimeout(cargar, 200)
+    const t = setTimeout(cargar, 300)
     return () => clearTimeout(t)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busqueda, filtroCategoria])
+  }, [cargar])
 
   const stats = {
     total: productos.length,
@@ -65,16 +71,13 @@ export default function Inventario() {
   }
 
   const eliminar = async (p) => {
-    if (!confirm(`¿Eliminar "${p.nombre}"? Quedará inactivo pero se conservará el historial.`)) return
+    if (!confirm(`¿Eliminar "${p.nombre}"?`)) return
     try {
       await productosAPI.eliminar(p.id)
       toast.success('Producto eliminado')
       cargar()
     } catch (err) { toast.error(err.message) }
   }
-
-  const abrirEditar = (p) => { setEditando(p); setModalAbierto(true) }
-  const abrirNuevo = () => { setEditando(null); setModalAbierto(true) }
 
   return (
     <div className="space-y-4">
@@ -96,15 +99,11 @@ export default function Inventario() {
             className="input-base w-full pl-9"
           />
         </div>
-        <select
-          value={filtroCategoria}
-          onChange={e => setFiltroCategoria(e.target.value)}
-          className="input-base"
-        >
+        <select value={filtroCategoria} onChange={e => setFiltroCategoria(e.target.value)} className="input-base">
           <option value="">Todas las categorías</option>
           {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
         </select>
-        <button onClick={abrirNuevo} className="btn-primary flex items-center gap-2">
+        <button onClick={() => { setEditando(null); setModalAbierto(true) }} className="btn-primary flex items-center gap-2">
           <Plus size={16} /> Nuevo producto
         </button>
       </div>
@@ -118,6 +117,7 @@ export default function Inventario() {
                 <th className="text-left py-3 px-3 font-medium">Producto</th>
                 <th className="text-left py-3 px-3 font-medium">Categoría</th>
                 <th className="text-right py-3 px-3 font-medium">Precio</th>
+                <th className="text-right py-3 px-3 font-medium">Costo</th>
                 <th className="text-right py-3 px-3 font-medium">Stock</th>
                 <th className="text-left py-3 px-3 font-medium">Vence</th>
                 <th className="text-left py-3 px-3 font-medium">Estado</th>
@@ -126,28 +126,22 @@ export default function Inventario() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={8} className="py-12 text-center text-slate-400">Cargando...</td></tr>
+                <tr><td colSpan={9} className="py-12 text-center text-slate-400">Cargando...</td></tr>
               ) : productos.length === 0 ? (
-                <tr><td colSpan={8} className="py-12 text-center text-slate-400">No hay productos</td></tr>
+                <tr><td colSpan={9} className="py-12 text-center text-slate-400">No hay productos</td></tr>
               ) : productos.map(p => {
                 const estado = estadoProducto(p)
                 return (
-                  <tr key={p.id} className={`${filaResaltado[estado.tipo] || ''} hover:bg-slate-50/80 transition-colors`}>
+                  <tr key={p.id} className={`${filaResaltado[estado.tipo] || ''} hover:bg-slate-50/80`}>
                     <td className="py-2.5 px-3 font-mono text-xs text-slate-600">{p.codigo || '—'}</td>
-                    <td className="py-2.5 px-3">
-                      <div className="flex items-center gap-1.5 font-medium">
-                        {p.tipo_venta === 'peso' && <Scale size={12} className="text-brand-500 shrink-0" />}
-                        {p.nombre}
-                      </div>
-                    </td>
+                    <td className="py-2.5 px-3 font-medium">{p.nombre}</td>
                     <td className="py-2.5 px-3 text-slate-500 text-xs">{p.categoria?.nombre || '—'}</td>
-                    <td className="py-2.5 px-3 text-right text-xs">{labelPrecio(p)}</td>
+                    <td className="py-2.5 px-3 text-right text-xs">{formatColones(p.precio_venta)}</td>
+                    <td className="py-2.5 px-3 text-right text-xs">{formatColones(p.costo)}</td>
                     <td className={`py-2.5 px-3 text-right ${p.stock <= p.stock_minimo ? 'font-bold text-amber-700' : ''}`}>
-                      {formatStock(p)}
+                      {Math.floor(p.stock)}
                     </td>
-                    <td className="py-2.5 px-3 text-xs text-slate-500">
-                      {p.fecha_vencimiento ? formatFecha(p.fecha_vencimiento) : '—'}
-                    </td>
+                    <td className="py-2.5 px-3 text-xs text-slate-500">{p.fecha_vencimiento ? formatFecha(p.fecha_vencimiento) : '—'}</td>
                     <td className="py-2.5 px-3">
                       <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-medium ${estadoBadge[estado.tipo]}`}>
                         {estado.label}
@@ -155,7 +149,7 @@ export default function Inventario() {
                     </td>
                     <td className="py-2.5 px-3 text-right">
                       <div className="flex justify-end gap-1">
-                        <button onClick={() => abrirEditar(p)} className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded">
+                        <button onClick={() => { setEditando(p); setModalAbierto(true) }} className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded">
                           <Edit2 size={14} />
                         </button>
                         <button onClick={() => eliminar(p)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded">
@@ -202,10 +196,8 @@ function StatCard({ icon: Icon, label, valor, variante = 'normal' }) {
 
 function ProductoModal({ open, onClose, producto, categorias, onGuardar }) {
   const [form, setForm] = useState({
-    codigo: '', nombre: '',
-    tipo_venta: 'unidad', unidad_medida: 'kg',
-    precio_venta: '', costo: '', stock: 0,
-    stock_minimo: 5, categoria_id: '', fecha_vencimiento: '',
+    codigo: '', nombre: '', precio_venta: '', costo: '',
+    stock: 0, stock_minimo: 5, categoria_id: '', fecha_vencimiento: '',
   })
 
   useEffect(() => {
@@ -213,8 +205,6 @@ function ProductoModal({ open, onClose, producto, categorias, onGuardar }) {
       setForm({
         codigo: producto.codigo || '',
         nombre: producto.nombre || '',
-        tipo_venta: producto.tipo_venta || 'unidad',
-        unidad_medida: producto.unidad_medida || 'kg',
         precio_venta: producto.precio_venta || '',
         costo: producto.costo || '',
         stock: producto.stock || 0,
@@ -223,14 +213,14 @@ function ProductoModal({ open, onClose, producto, categorias, onGuardar }) {
         fecha_vencimiento: producto.fecha_vencimiento || '',
       })
     } else {
-      setForm({
-        codigo: '', nombre: '',
-        tipo_venta: 'unidad', unidad_medida: 'kg',
-        precio_venta: '', costo: '', stock: 0,
-        stock_minimo: 5, categoria_id: '', fecha_vencimiento: '',
-      })
+      setForm({ codigo: '', nombre: '', precio_venta: '', costo: '', stock: 0, stock_minimo: 5, categoria_id: '', fecha_vencimiento: '' })
     }
   }, [producto, open])
+
+  // Actualizar un campo sin recrear todo el componente
+  const setField = (campo, valor) => {
+    setForm(prev => ({ ...prev, [campo]: valor }))
+  }
 
   const guardar = async () => {
     if (!form.nombre.trim()) return toast.error('El nombre es obligatorio')
@@ -239,12 +229,11 @@ function ProductoModal({ open, onClose, producto, categorias, onGuardar }) {
     const datos = {
       codigo: form.codigo.trim() || null,
       nombre: form.nombre.trim(),
-      tipo_venta: form.tipo_venta,
-      unidad_medida: form.tipo_venta === 'peso' ? form.unidad_medida : null,
+      tipo_venta: 'unidad',
       precio_venta: parseFloat(form.precio_venta),
       costo: parseFloat(form.costo) || 0,
-      stock: parseFloat(form.stock) || 0,
-      stock_minimo: parseFloat(form.stock_minimo) || 5,
+      stock: parseInt(form.stock) || 0,
+      stock_minimo: parseInt(form.stock_minimo) || 5,
       categoria_id: form.categoria_id ? parseInt(form.categoria_id) : null,
       fecha_vencimiento: form.fecha_vencimiento || null,
     }
@@ -263,145 +252,59 @@ function ProductoModal({ open, onClose, producto, categorias, onGuardar }) {
     }
   }
 
-  const Field = ({ label, children, hint }) => (
-    <div>
-      <div className="text-xs text-slate-500 mb-1">{label}</div>
-      {children}
-      {hint && <div className="text-xs text-slate-400 mt-1">{hint}</div>}
-    </div>
-  )
-
-  const labelPrecio = form.tipo_venta === 'peso'
-    ? `Precio de venta por ${form.unidad_medida} *`
-    : 'Precio de venta *'
-
-  const labelCosto = form.tipo_venta === 'peso'
-    ? `Costo por ${form.unidad_medida}`
-    : 'Costo'
-
   return (
     <Modal open={open} onClose={onClose} title={producto ? 'Editar producto' : 'Nuevo producto'} maxWidth="max-w-2xl">
       <div className="space-y-3">
-        {/* Tipo de venta */}
-        <div>
-          <div className="text-xs text-slate-500 mb-2">Tipo de venta</div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setForm({ ...form, tipo_venta: 'unidad', unidad_medida: null })}
-              className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                form.tipo_venta === 'unidad'
-                  ? 'border-brand-600 bg-brand-50 text-brand-700'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-              }`}
-            >
-              <Package size={16} /> Por unidad
-            </button>
-            <button
-              type="button"
-              onClick={() => setForm({ ...form, tipo_venta: 'peso', unidad_medida: form.unidad_medida || 'kg' })}
-              className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                form.tipo_venta === 'peso'
-                  ? 'border-brand-600 bg-brand-50 text-brand-700'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-              }`}
-            >
-              <Scale size={16} /> Por peso
-            </button>
-          </div>
-          <div className="text-xs text-slate-400 mt-1">
-            {form.tipo_venta === 'unidad'
-              ? 'Se vende en unidades enteras (collares, latas, juguetes)'
-              : 'Se vende por peso variable (alimento a granel, snacks por kg)'}
-          </div>
-        </div>
-
-        {form.tipo_venta === 'peso' && (
-          <Field label="Unidad de medida">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, unidad_medida: 'kg' })}
-                className={`px-3 py-2 rounded-lg text-sm font-medium ${
-                  form.unidad_medida === 'kg' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >Kilogramos (kg)</button>
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, unidad_medida: 'g' })}
-                className={`px-3 py-2 rounded-lg text-sm font-medium ${
-                  form.unidad_medida === 'g' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >Gramos (g)</button>
-            </div>
-          </Field>
-        )}
-
         <div className="grid grid-cols-3 gap-3">
           <Field label="Código">
-            <input value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} className="input-base w-full" placeholder="Opcional" />
+            <input value={form.codigo} onChange={e => setField('codigo', e.target.value)} className="input-base w-full" placeholder="Opcional" />
           </Field>
           <div className="col-span-2">
-            <Field label="Nombre *">
-              <input value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className="input-base w-full" />
+            <Field label="Nombre *" hint="Incluí peso/tamaño si aplica. Ej: Dog Chow 2kg">
+              <input value={form.nombre} onChange={e => setField('nombre', e.target.value)} className="input-base w-full" autoFocus />
             </Field>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label={labelPrecio}>
-            <input type="number" step="0.01" value={form.precio_venta} onChange={e => setForm({ ...form, precio_venta: e.target.value })} className="input-base w-full" />
+          <Field label="Precio de venta *">
+            <input type="number" step="1" value={form.precio_venta} onChange={e => setField('precio_venta', e.target.value)} className="input-base w-full" />
           </Field>
-          <Field label={labelCosto}>
-            <input type="number" step="0.01" value={form.costo} onChange={e => setForm({ ...form, costo: e.target.value })} className="input-base w-full" />
+          <Field label="Costo">
+            <input type="number" step="1" value={form.costo} onChange={e => setField('costo', e.target.value)} className="input-base w-full" />
           </Field>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label={`Stock actual${form.tipo_venta === 'peso' ? ` (${form.unidad_medida})` : ''}`}>
-            <input
-              type="number"
-              step={form.tipo_venta === 'peso' ? '0.001' : '1'}
-              value={form.stock}
-              onChange={e => setForm({ ...form, stock: e.target.value })}
-              className="input-base w-full"
-            />
+          <Field label="Stock actual (unidades/bolsas)">
+            <input type="number" step="1" value={form.stock} onChange={e => setField('stock', e.target.value)} className="input-base w-full" />
           </Field>
           <Field label="Stock mínimo (alerta)">
-            <input
-              type="number"
-              step={form.tipo_venta === 'peso' ? '0.001' : '1'}
-              value={form.stock_minimo}
-              onChange={e => setForm({ ...form, stock_minimo: e.target.value })}
-              className="input-base w-full"
-            />
+            <input type="number" step="1" value={form.stock_minimo} onChange={e => setField('stock_minimo', e.target.value)} className="input-base w-full" />
           </Field>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Categoría">
-            <select value={form.categoria_id} onChange={e => setForm({ ...form, categoria_id: e.target.value })} className="input-base w-full">
+            <select value={form.categoria_id} onChange={e => setField('categoria_id', e.target.value)} className="input-base w-full">
               <option value="">Sin categoría</option>
               {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </Field>
           <Field label="Fecha de vencimiento">
-            <input type="date" value={form.fecha_vencimiento || ''} onChange={e => setForm({ ...form, fecha_vencimiento: e.target.value })} className="input-base w-full" />
+            <input type="date" value={form.fecha_vencimiento || ''} onChange={e => setField('fecha_vencimiento', e.target.value)} className="input-base w-full" />
           </Field>
         </div>
 
-        {form.precio_venta && form.costo && (
+        {form.precio_venta && form.costo > 0 && (
           <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-800">
-            Margen: {formatColones(form.precio_venta - form.costo)} ({(((form.precio_venta - form.costo) / form.precio_venta) * 100).toFixed(0)}%)
-            {form.tipo_venta === 'peso' && ` por ${form.unidad_medida}`}
+            Margen: {formatColones(form.precio_venta - form.costo)} ({(((form.precio_venta - form.costo) / form.precio_venta) * 100).toFixed(0)}%) por unidad
           </div>
         )}
 
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="btn-secondary">Cancelar</button>
-          <button onClick={guardar} className="btn-primary">
-            {producto ? 'Guardar cambios' : 'Crear producto'}
-          </button>
+          <button onClick={guardar} className="btn-primary">{producto ? 'Guardar cambios' : 'Crear producto'}</button>
         </div>
       </div>
     </Modal>
