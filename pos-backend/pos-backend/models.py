@@ -132,14 +132,25 @@ class DetalleCompra(Base):
     producto = relationship("Producto", back_populates="detalles_compra")
 
 
+class AperturaCaja(Base):
+    __tablename__ = "aperturas_caja"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fecha = Column(DateTime, default=datetime.now, index=True)
+    monto = Column(Float, nullable=False)  # Dinero con que inicia la caja
+    notas = Column(String(500), nullable=True)
+
+
 class CierreCaja(Base):
     __tablename__ = "cierres_caja"
 
     id = Column(Integer, primary_key=True, index=True)
     fecha_cierre = Column(DateTime, default=datetime.now, index=True)
-    total_esperado = Column(Float, nullable=False)
-    total_real = Column(Float, nullable=False)
-    diferencia = Column(Float, nullable=False)
+    monto_apertura = Column(Float, default=0)   # Con cuánto inició la caja
+    total_ventas_efectivo = Column(Float, default=0)  # Ventas en efectivo del turno
+    total_esperado = Column(Float, nullable=False)   # apertura + ventas efectivo
+    total_real = Column(Float, nullable=False)       # Lo que contó el cajero
+    diferencia = Column(Float, nullable=False)       # real - esperado
     total_efectivo = Column(Float, default=0)
     total_sinpe = Column(Float, default=0)
     total_tarjeta = Column(Float, default=0)

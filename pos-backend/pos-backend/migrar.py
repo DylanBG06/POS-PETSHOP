@@ -56,6 +56,27 @@ def main():
             cur.execute("ALTER TABLE ventas ADD COLUMN usuario_id INTEGER")
             cambios.append("ventas.usuario_id")
 
+    # Tabla de aperturas de caja
+    if not table_exists(cur, "aperturas_caja"):
+        cur.execute("""
+            CREATE TABLE aperturas_caja (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+                monto FLOAT NOT NULL,
+                notas VARCHAR(500)
+            )
+        """)
+        cambios.append("tabla: aperturas_caja")
+
+    # Columnas nuevas en cierres_caja
+    if table_exists(cur, "cierres_caja"):
+        if not column_exists(cur, "cierres_caja", "monto_apertura"):
+            cur.execute("ALTER TABLE cierres_caja ADD COLUMN monto_apertura FLOAT DEFAULT 0")
+            cambios.append("cierres_caja.monto_apertura")
+        if not column_exists(cur, "cierres_caja", "total_ventas_efectivo"):
+            cur.execute("ALTER TABLE cierres_caja ADD COLUMN total_ventas_efectivo FLOAT DEFAULT 0")
+            cambios.append("cierres_caja.total_ventas_efectivo")
+
     conn.commit()
     conn.close()
 

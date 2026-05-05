@@ -181,6 +181,21 @@ class CompraOut(BaseModel):
 
 
 # ---------- CAJA ----------
+class AperturaCajaCreate(BaseModel):
+    monto: float = Field(ge=0)
+    notas: Optional[str] = None
+
+
+class AperturaCajaOut(BaseModel):
+    id: int
+    fecha: datetime
+    monto: float
+    notas: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
 class CierreCajaCreate(BaseModel):
     total_real: float
     notas: Optional[str] = None
@@ -189,6 +204,8 @@ class CierreCajaCreate(BaseModel):
 class CierreCajaOut(BaseModel):
     id: int
     fecha_cierre: datetime
+    monto_apertura: float = 0
+    total_ventas_efectivo: float = 0
     total_esperado: float
     total_real: float
     diferencia: float
@@ -208,6 +225,9 @@ class ResumenCaja(BaseModel):
     total_efectivo: float
     total_sinpe: float
     total_tarjeta: float
+    monto_apertura: float = 0          # Con cuánto inició la caja
+    total_esperado_cierre: float = 0   # apertura + ventas efectivo
+    tiene_apertura: bool = False
 
 
 # ---------- REPORTES ----------

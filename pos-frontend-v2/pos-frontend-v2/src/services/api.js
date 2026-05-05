@@ -67,7 +67,8 @@ export const comprasAPI = {
 
 export const cajaAPI = {
   resumenHoy: () => api.get('/caja/resumen-hoy').then(r => r.data),
-  resumenFecha: (fecha) => api.get(`/caja/resumen/${fecha}`).then(r => r.data),
+  aperturaHoy: () => api.get('/caja/apertura-hoy').then(r => r.data),
+  registrarApertura: (data) => api.post('/caja/apertura', data).then(r => r.data),
   cerrar: (data) => api.post('/caja/cerrar', data).then(r => r.data),
   cierres: (limit = 30) => api.get('/caja/cierres', { params: { limit } }).then(r => r.data),
   eliminarCierre: (id) => api.delete(`/caja/cierres/${id}`),
