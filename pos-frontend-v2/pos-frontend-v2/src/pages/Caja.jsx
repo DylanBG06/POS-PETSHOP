@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Banknote, Smartphone, CreditCard, AlertCircle, Calendar, RefreshCw, Trash2, LockOpen, Lock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cajaAPI, ventasAPI } from '../services/api'
@@ -7,6 +8,7 @@ import Modal from '../components/Modal'
 
 export default function Caja() {
   const [resumen, setResumen] = useState(null)
+  const [apertura, setApertura] = useState(null)
   const [ventas, setVentas] = useState([])
   const [cierres, setCierres] = useState([])
   const [cargaInicial, setCargaInicial] = useState(true)
@@ -14,17 +16,22 @@ export default function Caja() {
   const [modalApertura, setModalApertura] = useState(false)
   const [modalCierre, setModalCierre] = useState(false)
   const [detalleVenta, setDetalleVenta] = useState(null)
+  const location = useLocation()
 
   const cargar = useCallback(async (silencioso = false) => {
     if (silencioso) setRefrescando(true)
     try {
       const hoy = toDateInput(new Date())
-      const [r, v, c] = await Promise.all([
+
+      const [r, ap, v, c] = await Promise.all([
         cajaAPI.resumenHoy(),
-        ventasAPI.listar({ fecha_inicio: hoy, fecha_fin: hoy, limit: 100 }),
+        cajaAPI.aperturaHoy().catch(() => null),
+        ventasAPI.listar({ fecha_inicio: hoy, fecha_fin: hoy, limit: 500 }),
         cajaAPI.cierres(10),
       ])
+
       setResumen(r)
+      setApertura(ap)
       setVentas(v)
       setCierres(c)
     } catch (err) {
@@ -36,9 +43,16 @@ export default function Caja() {
     }
   }, [])
 
-  // Carga inicial
+  // Recargar cada vez que se navega a esta página
   useEffect(() => {
     cargar(false)
+  }, [location.pathname, cargar])
+
+  // Recargar cuando la ventana vuelve a tener foco
+  useEffect(() => {
+    const onFocus = () => cargar(true)
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
   }, [cargar])
 
   // Auto-refresh cada 5 minutos
@@ -91,6 +105,11 @@ export default function Caja() {
           </div>
           <div className="text-2xl font-bold text-slate-800">{formatColones(resumen.monto_apertura)}</div>
           <div className="text-xs text-slate-500 mt-1">{sinApertura ? 'Sin registrar' : 'Inicio del turno'}</div>
+          {apertura?.notas && (
+            <div className="text-xs text-slate-600 mt-2 pt-2 border-t border-slate-100 italic">
+              📝 {apertura.notas}
+            </div>
+          )}
         </div>
 
         <div className="card bg-gradient-to-br from-brand-600 to-brand-700 text-white border-0">
@@ -246,6 +265,11 @@ export default function Caja() {
                     </div>
                   </div>
                 </div>
+                {c.notas && (
+                  <div className="mt-2 pt-2 border-t border-slate-200 text-xs text-slate-700 italic">
+                    📝 {c.notas}
+                  </div>
+                )}
               </div>
             ))}
           </div>

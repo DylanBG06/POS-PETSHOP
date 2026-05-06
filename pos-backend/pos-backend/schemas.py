@@ -257,8 +257,9 @@ class ResumenCaja(BaseModel):
     monto_apertura: float = 0
     total_esperado_cierre: float = 0
     tiene_apertura: bool = False
-    monto_bonificado: float = 0    # Total regalías del turno
-    monto_descuentos: float = 0    # Total descuentos del turno
+    monto_bonificado: float = 0
+    monto_descuentos: float = 0
+    fecha_inicio_turno: Optional[datetime] = None  # Desde cuándo cuenta el turno
 
 
 # ---------- REPORTES ----------

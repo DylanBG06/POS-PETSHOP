@@ -84,6 +84,7 @@ def _calcular_resumen(db: Session, desde: datetime, hasta: datetime, apertura: O
         tiene_apertura=apertura is not None,
         monto_bonificado=round(monto_bonificado, 2),
         monto_descuentos=round(monto_descuentos, 2),
+        fecha_inicio_turno=desde,
     )
 
 

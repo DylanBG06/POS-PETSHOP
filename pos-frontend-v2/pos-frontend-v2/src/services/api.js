@@ -56,6 +56,7 @@ export const categoriasAPI = {
 
 export const ventasAPI = {
   listar: (params = {}) => api.get('/ventas/', { params }).then(r => r.data),
+  listarDesde: (desde) => api.get('/ventas/', { params: { fecha_inicio: desde.split('T')[0], limit: 200 } }).then(r => r.data),
   obtener: (id) => api.get(`/ventas/${id}`).then(r => r.data),
   crear: (data) => api.post('/ventas/', data).then(r => r.data),
 }
