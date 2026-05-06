@@ -16,9 +16,7 @@ start "Frontend POS" /min cmd /k "cd /d "%~dp0pos-frontend-v2\pos-frontend-v2" &
 REM --- Esperar que el frontend levante ---
 timeout /t 6 /nobreak >nul
 
-REM --- Abrir Chrome ---
-start chrome "http://localhost:5173"
-if errorlevel 1 start "" "http://localhost:5173"
+REM --- Abrir navegador UNA SOLA VEZ ---
+start "" "http://localhost:5173"
 
-timeout /t 2 /nobreak >nul
 exit

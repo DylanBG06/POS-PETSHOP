@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Search, Plus, Edit2, Trash2, Package, AlertTriangle, Calendar, DollarSign, ArrowDownRight, Scissors } from 'lucide-react'
+import { Search, Plus, Edit2, Trash2, Package, AlertTriangle, DollarSign, ArrowDownRight, Scissors, Link2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { productosAPI, categoriasAPI } from '../services/api'
-import { formatColones, formatFecha, estadoProducto } from '../utils/format'
+import { formatColones, estadoProducto } from '../utils/format'
 import Modal from '../components/Modal'
 
 const estadoBadge = {
@@ -32,6 +32,7 @@ export default function Inventario() {
   const [editando, setEditando] = useState(null)
   const [modalDesglose, setModalDesglose] = useState(null)
   const [modalHijo, setModalHijo] = useState(null)
+  const [modalVincular, setModalVincular] = useState(null)
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -73,8 +74,8 @@ export default function Inventario() {
         <StatCard icon={DollarSign} label="VALOR INVENTARIO" valor={formatColones(stats.valor)} />
       </div>
 
-      <div className="flex gap-2 items-center">
-        <div className="relative flex-1">
+      <div className="flex gap-2 items-center flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar..." className="input-base w-full pl-9" />
         </div>
@@ -82,6 +83,9 @@ export default function Inventario() {
           <option value="">Todas</option>
           {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
         </select>
+        <button onClick={() => setModalVincular({})} className="btn-secondary flex items-center gap-1.5 text-sm">
+          <Link2 size={14} /> Vincular huérfano
+        </button>
         <button onClick={() => { setEditando(null); setModalAbierto(true) }} className="btn-primary flex items-center gap-2">
           <Plus size={16} /> Nuevo producto
         </button>
@@ -138,15 +142,13 @@ export default function Inventario() {
                     </td>
                     <td className="py-2.5 px-3 text-right">
                       <div className="flex justify-end gap-1">
-                        {/* Desglosar: solo padres que tienen hijos */}
                         {esPadre && p.stock > 0 && (
                           <button onClick={() => setModalDesglose(p)} className="p-1.5 text-brand-500 hover:text-brand-700 hover:bg-brand-50 rounded" title="Desglosar">
                             <Scissors size={14} />
                           </button>
                         )}
-                        {/* Crear hijo: solo COMPRABLES */}
                         {p.tipo_producto === 'COMPRABLE' && !esHijo && (
-                          <button onClick={() => setModalHijo(p)} className="p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded" title="Crear producto derivado">
+                          <button onClick={() => setModalHijo(p)} className="p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded" title="Crear derivado">
                             <Plus size={14} />
                           </button>
                         )}
@@ -166,14 +168,10 @@ export default function Inventario() {
         </div>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-900">
-        <strong>Jerarquía de productos:</strong> Usá el botón <Plus size={10} className="inline" /> para crear un producto derivado (ej: bolsita de 1kg desde un saco de 30kg).
-        Luego usá <Scissors size={10} className="inline" /> para desglosar: convertir sacos en bolsitas.
-      </div>
-
       <ProductoModal open={modalAbierto} onClose={() => setModalAbierto(false)} producto={editando} categorias={categorias} onGuardar={() => { setModalAbierto(false); cargar() }} />
       <DesgloseModal producto={modalDesglose} onClose={() => setModalDesglose(null)} onGuardar={() => { setModalDesglose(null); cargar() }} />
       <CrearHijoModal padre={modalHijo} onClose={() => setModalHijo(null)} categorias={categorias} onGuardar={() => { setModalHijo(null); cargar() }} />
+      <VincularPadreModal abierto={!!modalVincular} onClose={() => setModalVincular(null)} onGuardar={() => { setModalVincular(null); cargar() }} />
     </div>
   )
 }
@@ -189,13 +187,13 @@ function StatCard({ icon: Icon, label, valor, variante = 'normal' }) {
   )
 }
 
-// --- Modal: Crear/editar producto ---
+// ─── Crear/editar producto ───
 function ProductoModal({ open, onClose, producto, categorias, onGuardar }) {
   const [form, setForm] = useState({ codigo: '', nombre: '', precio_venta: '', costo: '', stock: 0, stock_minimo: 5, categoria_id: '', fecha_vencimiento: '' })
 
   useEffect(() => {
     if (producto) {
-      setForm({ codigo: producto.codigo||'', nombre: producto.nombre||'', precio_venta: producto.precio_venta||'', costo: producto.costo||'', stock: producto.stock||0, stock_minimo: producto.stock_minimo||5, categoria_id: producto.categoria_id||'', fecha_vencimiento: producto.fecha_vencimiento||'' })
+      setForm({ codigo: producto.codigo || '', nombre: producto.nombre || '', precio_venta: producto.precio_venta || '', costo: producto.costo || '', stock: producto.stock || 0, stock_minimo: producto.stock_minimo || 5, categoria_id: producto.categoria_id || '', fecha_vencimiento: producto.fecha_vencimiento || '' })
     } else {
       setForm({ codigo: '', nombre: '', precio_venta: '', costo: '', stock: 0, stock_minimo: 5, categoria_id: '', fecha_vencimiento: '' })
     }
@@ -208,8 +206,8 @@ function ProductoModal({ open, onClose, producto, categorias, onGuardar }) {
     if (!form.precio_venta || form.precio_venta <= 0) return toast.error('Precio > 0')
     const datos = {
       codigo: form.codigo.trim() || null, nombre: form.nombre.trim(), tipo_venta: 'unidad',
-      precio_venta: parseFloat(form.precio_venta), costo: parseFloat(form.costo)||0,
-      stock: parseInt(form.stock)||0, stock_minimo: parseInt(form.stock_minimo)||5,
+      precio_venta: parseFloat(form.precio_venta), costo: parseFloat(form.costo) || 0,
+      stock: parseInt(form.stock) || 0, stock_minimo: parseInt(form.stock_minimo) || 5,
       categoria_id: form.categoria_id ? parseInt(form.categoria_id) : null,
       fecha_vencimiento: form.fecha_vencimiento || null,
     }
@@ -226,7 +224,9 @@ function ProductoModal({ open, onClose, producto, categorias, onGuardar }) {
         <div className="grid grid-cols-3 gap-3">
           <Field label="Código"><input value={form.codigo} onChange={e => setField('codigo', e.target.value)} className="input-base w-full" placeholder="Opcional" /></Field>
           <div className="col-span-2">
-            <Field label="Nombre *" hint="Incluí peso si aplica: Dog Chow 2kg"><input value={form.nombre} onChange={e => setField('nombre', e.target.value)} className="input-base w-full" autoFocus /></Field>
+            <Field label="Nombre *" hint="Incluí peso si aplica: Dog Chow 2kg">
+              <input value={form.nombre} onChange={e => setField('nombre', e.target.value)} className="input-base w-full" autoFocus />
+            </Field>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -244,13 +244,10 @@ function ProductoModal({ open, onClose, producto, categorias, onGuardar }) {
               {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </Field>
-          <Field label="Vencimiento"><input type="date" value={form.fecha_vencimiento||''} onChange={e => setField('fecha_vencimiento', e.target.value)} className="input-base w-full" /></Field>
+          <Field label="Vencimiento">
+            <input type="date" value={form.fecha_vencimiento || ''} onChange={e => setField('fecha_vencimiento', e.target.value)} className="input-base w-full" />
+          </Field>
         </div>
-        {form.precio_venta && form.costo > 0 && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-800">
-            Margen: {formatColones(form.precio_venta - form.costo)} ({(((form.precio_venta - form.costo) / form.precio_venta) * 100).toFixed(0)}%)
-          </div>
-        )}
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="btn-secondary">Cancelar</button>
           <button onClick={guardar} className="btn-primary">{producto ? 'Guardar' : 'Crear'}</button>
@@ -260,40 +257,53 @@ function ProductoModal({ open, onClose, producto, categorias, onGuardar }) {
   )
 }
 
-// --- Modal: Desglosar (saco → bolsitas) ---
+// ─── Desglose multi-formato ───
 function DesgloseModal({ producto, onClose, onGuardar }) {
-  const [cantidad, setCantidad] = useState(1)
-  const [hijoId, setHijoId] = useState('')
   const [hijos, setHijos] = useState([])
+  const [items, setItems] = useState({})  // {hijoId: cantidadHijos}
   const [procesando, setProcesando] = useState(false)
-  const [cargandoHijos, setCargandoHijos] = useState(false)
+  const [cargando, setCargando] = useState(false)
 
   useEffect(() => {
     if (!producto) return
-    setCantidad(1)
-    setHijoId('')
-    setCargandoHijos(true)
+    setItems({})
+    setCargando(true)
     productosAPI.hijos(producto.id)
-      .then(h => {
-        setHijos(h)
-        if (h.length === 1) setHijoId(String(h[0].id)) // auto-seleccionar si solo hay uno
-      })
+      .then(setHijos)
       .catch(() => setHijos([]))
-      .finally(() => setCargandoHijos(false))
+      .finally(() => setCargando(false))
   }, [producto])
 
   if (!producto) return null
 
-  const hijoSeleccionado = hijos.find(h => String(h.id) === String(hijoId))
-  const unidadesGeneradas = hijoSeleccionado ? cantidad * hijoSeleccionado.factor_conversion : 0
+  // Calcular total de "padres equivalentes" consumidos
+  const totalPadresConsumidos = hijos.reduce((sum, h) => {
+    const cantidadHijo = parseFloat(items[h.id] || 0)
+    return sum + (cantidadHijo / h.factor_conversion)
+  }, 0)
+
+  const stockSuficiente = totalPadresConsumidos <= producto.stock + 0.001
+  const tieneAlgo = totalPadresConsumidos > 0
+
+  const cambiarCantidad = (hijoId, valor) => {
+    setItems(prev => ({ ...prev, [hijoId]: valor }))
+  }
 
   const desglosar = async () => {
-    if (!hijoId) return toast.error('Elegí en qué producto convertir')
-    if (cantidad <= 0) return toast.error('Cantidad > 0')
-    if (cantidad > producto.stock) return toast.error(`Solo hay ${Math.floor(producto.stock)} disponibles`)
+    if (!tieneAlgo) return toast.error('Ingresá al menos una cantidad')
+    if (!stockSuficiente) return toast.error(`Necesitás ${totalPadresConsumidos.toFixed(2)} unidades, hay ${producto.stock}`)
+
+    // Construir items para el backend (solo los con cantidad > 0)
+    const itemsBody = hijos
+      .filter(h => parseFloat(items[h.id] || 0) > 0)
+      .map(h => ({
+        hijo_id: h.id,
+        cantidad_padres: parseFloat(items[h.id]) / h.factor_conversion,
+      }))
+
     setProcesando(true)
     try {
-      const res = await productosAPI.desglosar(producto.id, cantidad, parseInt(hijoId))
+      const res = await productosAPI.desglosar(producto.id, { items: itemsBody })
       toast.success(res.mensaje, { duration: 5000 })
       onGuardar()
     } catch (err) { toast.error(err.message) }
@@ -301,66 +311,73 @@ function DesgloseModal({ producto, onClose, onGuardar }) {
   }
 
   return (
-    <Modal open={!!producto} onClose={onClose} title={`Desglosar: ${producto.nombre}`}>
+    <Modal open={!!producto} onClose={onClose} title={`Desglosar: ${producto.nombre}`} maxWidth="max-w-2xl">
       <div className="space-y-4">
         <div className="bg-brand-50 border border-brand-200 rounded-lg p-3 text-sm">
-          <div className="font-medium text-brand-800">Stock disponible: {Math.floor(producto.stock)} unidades</div>
+          <div className="font-medium text-brand-800">Stock disponible: {producto.stock} unidades</div>
+          <div className="text-xs text-brand-700 mt-1">
+            Ingresá cuántas unidades de cada formato querés generar. Podés combinar varios formatos a la vez.
+          </div>
         </div>
 
-        {cargandoHijos ? (
-          <div className="text-center py-4 text-slate-400 text-sm">Cargando productos derivados...</div>
+        {cargando ? (
+          <div className="text-center py-4 text-slate-400">Cargando productos derivados...</div>
         ) : hijos.length === 0 ? (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
-            Este producto no tiene derivados creados. Cerrá esta ventana y usá el botón <strong>+</strong> verde primero.
+            No hay productos derivados. Cerrá esta ventana y usá el botón <strong>+</strong> verde primero.
           </div>
         ) : (
-          <>
-            <Field label="¿En qué producto querés convertirlo?">
-              <div className="space-y-2">
-                {hijos.map(h => (
-                  <label key={h.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${String(hijoId) === String(h.id) ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                    <input
-                      type="radio" name="hijo" value={h.id}
-                      checked={String(hijoId) === String(h.id)}
-                      onChange={e => setHijoId(e.target.value)}
-                      className="text-brand-600"
-                    />
-                    <div className="flex-1">
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Cantidades a generar</div>
+            {hijos.map(h => {
+              const cantidadHijo = parseFloat(items[h.id] || 0)
+              const padresConsumidos = cantidadHijo / h.factor_conversion
+              return (
+                <div key={h.id} className="bg-slate-50 rounded-lg p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm">{h.nombre}</div>
                       <div className="text-xs text-slate-500">
-                        Factor: {h.factor_conversion} · Stock actual: {Math.floor(h.stock)}
+                        Stock actual: {Math.floor(h.stock)} · 1 padre = {h.factor_conversion} unidades
                       </div>
                     </div>
-                  </label>
-                ))}
-              </div>
-            </Field>
-
-            <Field label={`¿Cuántos "${producto.nombre}" desglosar?`}>
-              <input
-                type="number" min="1" max={Math.floor(producto.stock)}
-                value={cantidad} onChange={e => setCantidad(parseInt(e.target.value) || 0)}
-                className="input-base w-full text-2xl text-center font-medium py-3"
-              />
-            </Field>
-
-            {hijoSeleccionado && cantidad > 0 && (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800">
-                <div className="font-medium">Resultado:</div>
-                <div className="text-xs mt-1">
-                  · {producto.nombre}: {Math.floor(producto.stock)} → {Math.floor(producto.stock - cantidad)}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <input
+                        type="number" min="0" step="1"
+                        value={items[h.id] || ''}
+                        onChange={e => cambiarCantidad(h.id, e.target.value)}
+                        placeholder="0"
+                        className="input-base w-24 text-right"
+                      />
+                      <span className="text-xs text-slate-500">unidades</span>
+                    </div>
+                  </div>
+                  {cantidadHijo > 0 && (
+                    <div className="mt-2 text-xs text-brand-700 bg-brand-50 rounded px-2 py-1">
+                      Consume {padresConsumidos.toFixed(3)} unidades del padre
+                    </div>
+                  )}
                 </div>
-                <div className="text-xs">
-                  · {hijoSeleccionado.nombre}: {Math.floor(hijoSeleccionado.stock)} → {Math.floor(hijoSeleccionado.stock + unidadesGeneradas)} (+{Math.floor(unidadesGeneradas)})
-                </div>
+              )
+            })}
+
+            <div className={`rounded-lg p-3 mt-3 border ${stockSuficiente ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium">Total padres consumidos:</span>
+                <span className={`text-lg font-bold ${stockSuficiente ? 'text-emerald-700' : 'text-red-700'}`}>
+                  {totalPadresConsumidos.toFixed(3)} / {producto.stock}
+                </span>
               </div>
-            )}
-          </>
+              {!stockSuficiente && tieneAlgo && (
+                <div className="text-xs text-red-700 mt-1">No alcanza el stock disponible</div>
+              )}
+            </div>
+          </div>
         )}
 
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="btn-secondary">Cancelar</button>
-          <button onClick={desglosar} disabled={procesando || !hijoId || cantidad <= 0 || hijos.length === 0} className="btn-primary disabled:opacity-50 flex items-center gap-2">
+          <button onClick={desglosar} disabled={procesando || !tieneAlgo || !stockSuficiente || hijos.length === 0} className="btn-primary disabled:opacity-50 flex items-center gap-2">
             <Scissors size={14} /> {procesando ? 'Procesando...' : 'Desglosar'}
           </button>
         </div>
@@ -369,49 +386,33 @@ function DesgloseModal({ producto, onClose, onGuardar }) {
   )
 }
 
-// --- Modal: Crear producto hijo ---
+// ─── Crear hijo ───
 function CrearHijoModal({ padre, onClose, categorias, onGuardar }) {
   const [form, setForm] = useState({ codigo: '', nombre: '', precio_venta: '', factor_conversion: '' })
 
   useEffect(() => {
-    if (padre) {
-      setForm({
-        codigo: padre.codigo ? padre.codigo + '-01' : '',
-        nombre: '',
-        precio_venta: '',
-        factor_conversion: '',
-      })
-    }
+    if (padre) setForm({ codigo: padre.codigo ? padre.codigo + '-01' : '', nombre: '', precio_venta: '', factor_conversion: '' })
   }, [padre])
-
-  const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
   if (!padre) return null
 
-  const costoCalculado = padre.costo && form.factor_conversion > 0
-    ? Math.round(padre.costo / parseFloat(form.factor_conversion))
-    : 0
+  const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
+  const costoCalc = padre.costo && form.factor_conversion > 0
+    ? Math.round(padre.costo / parseFloat(form.factor_conversion)) : 0
 
   const guardar = async () => {
     if (!form.nombre.trim()) return toast.error('Nombre obligatorio')
     if (!form.precio_venta || form.precio_venta <= 0) return toast.error('Precio > 0')
     if (!form.factor_conversion || form.factor_conversion <= 0) return toast.error('Factor > 0')
-
     try {
       await productosAPI.crear({
-        codigo: form.codigo.trim() || null,
-        nombre: form.nombre.trim(),
-        tipo_venta: 'unidad',
-        precio_venta: parseFloat(form.precio_venta),
-        costo: 0, // Se calcula automático
-        stock: 0,
-        stock_minimo: 5,
-        categoria_id: padre.categoria_id,
-        tipo_producto: 'DERIVADO',
-        id_padre: padre.id,
-        factor_conversion: parseFloat(form.factor_conversion),
+        codigo: form.codigo.trim() || null, nombre: form.nombre.trim(),
+        tipo_venta: 'unidad', precio_venta: parseFloat(form.precio_venta),
+        costo: 0, stock: 0, stock_minimo: 5,
+        categoria_id: padre.categoria_id, tipo_producto: 'DERIVADO',
+        id_padre: padre.id, factor_conversion: parseFloat(form.factor_conversion),
       })
-      toast.success('Producto derivado creado. Ahora podés desglosar para generar stock.')
+      toast.success('Producto derivado creado')
       onGuardar()
     } catch (err) { toast.error(err.message) }
   }
@@ -422,35 +423,139 @@ function CrearHijoModal({ padre, onClose, categorias, onGuardar }) {
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800">
           <strong>Padre:</strong> {padre.nombre} · Costo: {formatColones(padre.costo)}
         </div>
-
-        <Field label="Código hijo">
-          <input value={form.codigo} onChange={e => setField('codigo', e.target.value)} className="input-base w-full" placeholder="Ej: 01-01" />
+        <Field label="Código"><input value={form.codigo} onChange={e => setField('codigo', e.target.value)} className="input-base w-full" /></Field>
+        <Field label="Nombre del derivado *" hint="Ej: Bolsa 1kg"><input value={form.nombre} onChange={e => setField('nombre', e.target.value)} className="input-base w-full" autoFocus /></Field>
+        <Field label="Factor de conversión *" hint={`¿Cuántas unidades salen de 1 "${padre.nombre}"?`}>
+          <input type="number" value={form.factor_conversion} onChange={e => setField('factor_conversion', e.target.value)} className="input-base w-full" />
         </Field>
-
-        <Field label="Nombre del producto derivado *" hint="Ej: Bolsa Magnus 1kg">
-          <input value={form.nombre} onChange={e => setField('nombre', e.target.value)} className="input-base w-full" autoFocus />
-        </Field>
-
-        <Field label="Factor de conversión *" hint={`¿Cuántas unidades salen de 1 "${padre.nombre}"? Ej: 30 si el saco es de 30kg y la bolsa de 1kg`}>
-          <input type="number" step="1" value={form.factor_conversion} onChange={e => setField('factor_conversion', e.target.value)} className="input-base w-full" />
-        </Field>
-
-        <Field label="Precio de venta *" hint="El precio que vos definís para ganar más vendiendo por unidad">
+        <Field label="Precio de venta *">
           <input type="number" value={form.precio_venta} onChange={e => setField('precio_venta', e.target.value)} className="input-base w-full" />
         </Field>
-
-        {costoCalculado > 0 && (
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs space-y-1">
-            <div className="flex justify-between"><span>Costo auto (padre ÷ factor):</span><span className="font-medium">{formatColones(costoCalculado)}</span></div>
+        {costoCalc > 0 && (
+          <div className="bg-slate-50 rounded-lg p-3 text-xs space-y-1">
+            <div className="flex justify-between"><span>Costo auto:</span><span className="font-medium">{formatColones(costoCalc)}</span></div>
             {form.precio_venta > 0 && (
-              <div className="flex justify-between text-emerald-700"><span>Ganancia por unidad:</span><span className="font-bold">{formatColones(form.precio_venta - costoCalculado)}</span></div>
+              <div className="flex justify-between text-emerald-700"><span>Ganancia:</span><span className="font-bold">{formatColones(form.precio_venta - costoCalc)}</span></div>
             )}
           </div>
+        )}
+        <div className="flex justify-end gap-2"><button onClick={onClose} className="btn-secondary">Cancelar</button><button onClick={guardar} className="btn-primary">Crear</button></div>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Vincular huérfano a un padre ───
+function VincularPadreModal({ abierto, onClose, onGuardar }) {
+  const [huerfanos, setHuerfanos] = useState([])
+  const [padresDisponibles, setPadresDisponibles] = useState([])
+  const [productoId, setProductoId] = useState('')
+  const [padreId, setPadreId] = useState('')
+  const [factor, setFactor] = useState('')
+  const [cargando, setCargando] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+
+  useEffect(() => {
+    if (!abierto) return
+    setProductoId(''); setPadreId(''); setFactor('')
+    setCargando(true)
+    Promise.all([
+      productosAPI.huerfanos(),
+      productosAPI.listar({ solo_comprables: true }),
+    ]).then(([h, todos]) => {
+      setHuerfanos(h)
+      // Padres disponibles: COMPRABLES sin padre
+      setPadresDisponibles(todos.filter(p => p.tipo_producto === 'COMPRABLE' && !p.id_padre))
+    }).finally(() => setCargando(false))
+  }, [abierto])
+
+  if (!abierto) return null
+
+  const productoSel = huerfanos.find(p => String(p.id) === String(productoId))
+  const padreSel = padresDisponibles.find(p => String(p.id) === String(padreId))
+  const costoCalc = padreSel?.costo && factor > 0 ? Math.round(padreSel.costo / parseFloat(factor)) : 0
+
+  const guardar = async () => {
+    if (!productoId) return toast.error('Elegí el producto a vincular')
+    if (!padreId) return toast.error('Elegí el producto padre')
+    if (productoId === padreId) return toast.error('No puede ser padre de sí mismo')
+    if (!factor || factor <= 0) return toast.error('Factor > 0')
+
+    setGuardando(true)
+    try {
+      await productosAPI.vincularPadre(parseInt(productoId), parseInt(padreId), parseFloat(factor))
+      toast.success(`"${productoSel.nombre}" vinculado como hijo de "${padreSel.nombre}"`)
+      onGuardar()
+    } catch (err) { toast.error(err.message) }
+    finally { setGuardando(false) }
+  }
+
+  return (
+    <Modal open={abierto} onClose={onClose} title="Vincular producto huérfano a un padre" maxWidth="max-w-2xl">
+      <div className="space-y-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+          Esta opción permite tomar un producto que ya existe en el inventario (con stock e historial)
+          y convertirlo en hijo de otro. Útil cuando ya tenías bolsas pequeñas en stock antes de empezar a comprar sacos.
+        </div>
+
+        {cargando ? (
+          <div className="text-center py-6 text-slate-400">Cargando productos...</div>
+        ) : huerfanos.length === 0 ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+            No hay productos sin padre disponibles. Todos tus productos ya están vinculados o son padres.
+          </div>
+        ) : (
+          <>
+            <Field label="Producto a vincular (será el hijo)">
+              <select value={productoId} onChange={e => setProductoId(e.target.value)} className="input-base w-full">
+                <option value="">— Elegí un producto —</option>
+                {huerfanos.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.nombre} (stock: {Math.floor(p.stock)}, costo: {formatColones(p.costo)})
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Producto padre (saco/contenedor)">
+              <select value={padreId} onChange={e => setPadreId(e.target.value)} className="input-base w-full">
+                <option value="">— Elegí el padre —</option>
+                {padresDisponibles.filter(p => String(p.id) !== productoId).map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.nombre} (costo: {formatColones(p.costo)})
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field
+              label="Factor de conversión"
+              hint={padreSel && productoSel ? `¿Cuántas "${productoSel.nombre}" salen de 1 "${padreSel.nombre}"?` : '¿Cuántas unidades hijo salen de 1 padre?'}
+            >
+              <input type="number" min="0.01" step="0.01" value={factor} onChange={e => setFactor(e.target.value)} className="input-base w-full" placeholder="Ej: 30" />
+            </Field>
+
+            {costoCalc > 0 && productoSel && (
+              <div className="bg-slate-50 rounded-lg p-3 text-xs space-y-1">
+                <div className="flex justify-between">
+                  <span>Costo recalculado del hijo:</span>
+                  <span className="font-medium">{formatColones(costoCalc)}</span>
+                </div>
+                <div className="text-slate-500">El stock actual ({Math.floor(productoSel.stock)}) se mantiene</div>
+              </div>
+            )}
+          </>
         )}
 
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="btn-secondary">Cancelar</button>
-          <button onClick={guardar} className="btn-primary">Crear derivado</button>
+          <button
+            onClick={guardar}
+            disabled={guardando || !productoId || !padreId || !factor || huerfanos.length === 0}
+            className="btn-primary disabled:opacity-50 flex items-center gap-2"
+          >
+            <Link2 size={14} /> {guardando ? 'Vinculando...' : 'Vincular'}
+          </button>
         </div>
       </div>
     </Modal>

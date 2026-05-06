@@ -1,11 +1,4 @@
-"""
-Endpoints de ventas.
-
-Cambios v2:
-- cantidad es Float (soporta venta por peso)
-- guarda costo_unit en cada detalle (costo congelado al momento de la venta)
-- valida tipo_venta del producto
-"""
+"""Endpoints de ventas con soporte para regalías y descuentos."""
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,23 +15,14 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 
-METODOS_PAGO_VALIDOS = {"efectivo", "sinpe", "tarjeta"}
-
 
 @router.post("/", response_model=schemas.VentaOut, status_code=201)
-def registrar_venta(
-    venta: schemas.VentaCreate,
-    db: Session = Depends(get_db),
-    usuario: models.Usuario = Depends(get_current_user),
-):
-    if venta.metodo_pago.lower() not in METODOS_PAGO_VALIDOS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Método de pago inválido. Use: {', '.join(METODOS_PAGO_VALIDOS)}"
-        )
-
+def crear_venta(venta: schemas.VentaCreate, db: Session = Depends(get_db)):
     if not venta.detalles:
         raise HTTPException(status_code=400, detail="La venta debe tener al menos un producto")
+
+    if venta.metodo_pago not in ("efectivo", "sinpe", "tarjeta"):
+        raise HTTPException(status_code=400, detail="Método de pago inválido")
 
     # Cargar productos
     ids_productos = [d.producto_id for d in venta.detalles]
@@ -48,91 +32,100 @@ def registrar_venta(
         ).all()
     }
 
-    # Validar y calcular
-    subtotal_total = 0.0
+    subtotal_normal = 0.0
+    monto_regalias = 0.0
+    descuento_total_venta = 0.0
     detalles_a_crear = []
+
     for detalle in venta.detalles:
         producto = productos.get(detalle.producto_id)
         if not producto:
             raise HTTPException(
                 status_code=404,
-                detail=f"Producto con id {detalle.producto_id} no encontrado"
+                detail=f"Producto {detalle.producto_id} no encontrado"
             )
+
         if not producto.activo:
             raise HTTPException(
                 status_code=400,
-                detail=f"El producto '{producto.nombre}' está inactivo"
+                detail=f"Producto '{producto.nombre}' no está activo"
             )
 
         cantidad = float(detalle.cantidad)
 
-        # Para productos por unidad, exigir cantidad entera
-        if producto.tipo_venta == "unidad" and cantidad != int(cantidad):
-            raise HTTPException(
-                status_code=400,
-                detail=f"'{producto.nombre}' se vende por unidades, la cantidad debe ser entera"
-            )
-
         if producto.stock < cantidad:
-            unidad_str = (
-                f" {producto.unidad_medida}" if producto.tipo_venta == "peso" else " unidades"
-            )
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"Stock insuficiente para '{producto.nombre}'. "
-                    f"Disponible: {producto.stock}{unidad_str}, solicitado: {cantidad}{unidad_str}"
-                )
+                detail=f"Stock insuficiente para '{producto.nombre}'. Hay {producto.stock}, intentás vender {cantidad}"
             )
 
-        subtotal_linea = round(producto.precio_venta * cantidad, 2)
-        subtotal_total += subtotal_linea
+        if detalle.es_regalia:
+            precio_unit = 0.0
+            descuento_item = 0.0
+            sub = 0.0
+            monto_regalias += producto.precio_venta * cantidad
+        else:
+            precio_unit = producto.precio_venta
+            sub_bruto = round(precio_unit * cantidad, 2)
+            # Descuento por item
+            desc_m = float(detalle.descuento_monto) if detalle.descuento_monto else 0
+            desc_p = float(detalle.descuento_porcentaje) if detalle.descuento_porcentaje else 0
+            descuento_item = round(min(sub_bruto, desc_m + (sub_bruto * desc_p / 100)), 2)
+            sub = round(sub_bruto - descuento_item, 2)
+            subtotal_normal += sub_bruto  # Subtotal antes de descuentos
+            descuento_total_venta += descuento_item
 
         detalles_a_crear.append({
             "producto_id": producto.id,
             "cantidad": cantidad,
-            "precio_unit": producto.precio_venta,
-            "costo_unit": producto.costo,  # Congelar el costo actual
-            "subtotal": subtotal_linea,
+            "precio_unit": precio_unit,
+            "costo_unit": producto.costo,
+            "descuento_item": descuento_item if not detalle.es_regalia else 0,
+            "subtotal": sub,
+            "es_regalia": detalle.es_regalia,
         })
 
-    subtotal_total = round(subtotal_total, 2)
-    total = subtotal_total
+    # Total = suma de subtotales ya descontados (los descuentos por item ya se aplicaron)
+    total = round(sum(d["subtotal"] for d in detalles_a_crear), 2)
+    descuento = round(descuento_total_venta, 2)
 
-    # Validar efectivo
+    # Validar pago en efectivo
     vuelto = 0.0
     monto_recibido = venta.monto_recibido
-    if venta.metodo_pago.lower() == "efectivo":
+    if venta.metodo_pago == "efectivo":
         if monto_recibido is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Para pago en efectivo debe ingresar el monto recibido"
-            )
+            raise HTTPException(status_code=400, detail="Falta el monto recibido en efectivo")
         if monto_recibido < total:
             raise HTTPException(
                 status_code=400,
-                detail=f"Monto recibido ({monto_recibido}) menor al total ({total})"
+                detail=f"Monto recibido ({monto_recibido}) insuficiente. Total: {total}"
             )
         vuelto = round(monto_recibido - total, 2)
+    else:
+        monto_recibido = None
 
-    # Crear venta
-    db_venta = models.Venta(
-        subtotal=subtotal_total,
-        total=total,
-        metodo_pago=venta.metodo_pago.lower(),
-        monto_recibido=monto_recibido,
-        vuelto=vuelto,
-        usuario_id=usuario.id,
-    )
-    db.add(db_venta)
-    db.flush()
+    # ATÓMICO: crear venta + descontar stock
+    try:
+        db_venta = models.Venta(
+            subtotal=round(subtotal_normal, 2),
+            descuento=descuento,
+            monto_regalias=round(monto_regalias, 2),
+            total=total,            metodo_pago=venta.metodo_pago,
+            monto_recibido=monto_recibido,
+            vuelto=vuelto,
+        )
+        db.add(db_venta)
+        db.flush()
 
-    for d in detalles_a_crear:
-        db.add(models.DetalleVenta(venta_id=db_venta.id, **d))
-        productos[d["producto_id"]].stock -= d["cantidad"]
+        for d in detalles_a_crear:
+            db.add(models.DetalleVenta(venta_id=db_venta.id, **d))
+            productos[d["producto_id"]].stock -= d["cantidad"]
 
-    db.commit()
-    db.refresh(db_venta)
+        db.commit()
+        db.refresh(db_venta)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al guardar venta: {str(e)}")
 
     return (
         db.query(models.Venta)
@@ -155,7 +148,6 @@ def listar_ventas(
     query = db.query(models.Venta).options(
         joinedload(models.Venta.detalles).joinedload(models.DetalleVenta.producto)
     )
-
     if fecha_inicio:
         query = query.filter(
             models.Venta.fecha >= datetime.combine(fecha_inicio, datetime.min.time())
@@ -163,7 +155,6 @@ def listar_ventas(
     if fecha_fin:
         fin = datetime.combine(fecha_fin, datetime.min.time()) + timedelta(days=1)
         query = query.filter(models.Venta.fecha < fin)
-
     return query.order_by(models.Venta.fecha.desc()).limit(limit).all()
 
 

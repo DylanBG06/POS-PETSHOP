@@ -102,15 +102,35 @@ class ProductoOut(ProductoBase):
         from_attributes = True
 
 
+class DesgloseItem(BaseModel):
+    """Un item del desglose multiformato: cuántas unidades del padre convertir en este hijo."""
+    hijo_id: int = Field(gt=0)
+    cantidad_padres: float = Field(gt=0, description="Unidades equivalentes del padre destinadas a este hijo (puede ser fraccional)")
+
+
 class DesglosarRequest(BaseModel):
-    cantidad_padres: int = Field(gt=0, description="Cuántos sacos/padres convertir")
-    hijo_id: int = Field(gt=0, description="ID del producto hijo destino")
+    """
+    Desglose simple (un solo hijo): cantidad_padres + hijo_id.
+    Desglose multi-formato: lista de items.
+    """
+    cantidad_padres: Optional[float] = Field(default=None, gt=0)
+    hijo_id: Optional[int] = Field(default=None, gt=0)
+    items: Optional[List[DesgloseItem]] = None
+
+
+class VincularPadreRequest(BaseModel):
+    """Vincular un producto huérfano como hijo de otro."""
+    id_padre: int = Field(gt=0)
+    factor_conversion: float = Field(gt=0)
 
 
 # ---------- VENTAS ----------
 class DetalleVentaCreate(BaseModel):
     producto_id: int
     cantidad: float = Field(gt=0)
+    es_regalia: bool = False
+    descuento_monto: float = Field(ge=0, default=0)      # Descuento en ₡ sobre este item
+    descuento_porcentaje: float = Field(ge=0, le=100, default=0)  # Descuento en % sobre este item
 
 
 class VentaCreate(BaseModel):
@@ -125,7 +145,9 @@ class DetalleVentaOut(BaseModel):
     cantidad: float
     precio_unit: float
     costo_unit: float
+    descuento_item: float = 0
     subtotal: float
+    es_regalia: bool = False
     producto: ProductoOut
 
     class Config:
@@ -136,6 +158,8 @@ class VentaOut(BaseModel):
     id: int
     fecha: datetime
     subtotal: float
+    descuento: float = 0
+    monto_regalias: float = 0
     total: float
     metodo_pago: str
     monto_recibido: Optional[float]
@@ -151,11 +175,13 @@ class DetalleCompraCreate(BaseModel):
     producto_id: int
     cantidad: float = Field(gt=0)
     costo_unit: float = Field(ge=0)
+    es_regalia: bool = False  # Si es True, costo es 0 y no afecta el promedio
 
 
 class CompraCreate(BaseModel):
     proveedor: Optional[str] = None
     detalles: List[DetalleCompraCreate]
+    descuento_monto: float = Field(ge=0, default=0)
 
 
 class DetalleCompraOut(BaseModel):
@@ -163,6 +189,7 @@ class DetalleCompraOut(BaseModel):
     producto_id: int
     cantidad: float
     costo_unit: float
+    es_regalia: bool = False
     producto: ProductoOut
 
     class Config:
@@ -173,6 +200,7 @@ class CompraOut(BaseModel):
     id: int
     fecha: datetime
     proveedor: Optional[str]
+    descuento: float = 0
     total: float
     detalles: List[DetalleCompraOut] = []
 
@@ -213,6 +241,7 @@ class CierreCajaOut(BaseModel):
     total_sinpe: float
     total_tarjeta: float
     cantidad_ventas: int
+    monto_bonificado: float = 0  # Total regalías
     notas: Optional[str]
 
     class Config:
@@ -225,9 +254,11 @@ class ResumenCaja(BaseModel):
     total_efectivo: float
     total_sinpe: float
     total_tarjeta: float
-    monto_apertura: float = 0          # Con cuánto inició la caja
-    total_esperado_cierre: float = 0   # apertura + ventas efectivo
+    monto_apertura: float = 0
+    total_esperado_cierre: float = 0
     tiene_apertura: bool = False
+    monto_bonificado: float = 0    # Total regalías del turno
+    monto_descuentos: float = 0    # Total descuentos del turno
 
 
 # ---------- REPORTES ----------
@@ -280,6 +311,9 @@ class GananciaResumen(BaseModel):
     flujo_neto: float
     cantidad_ventas: int
     cantidad_compras: int
+    total_descuentos: float = 0
+    total_regalias: float = 0
+    costo_regalias: float = 0    # Costo absorbido por regalías
 
 
 # ---------- CONFIGURACION ----------

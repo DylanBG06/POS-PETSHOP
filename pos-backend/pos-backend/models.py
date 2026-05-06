@@ -72,6 +72,8 @@ class Venta(Base):
     id = Column(Integer, primary_key=True, index=True)
     fecha = Column(DateTime, default=datetime.now, index=True)
     subtotal = Column(Float, nullable=False)
+    descuento = Column(Float, nullable=False, default=0)
+    monto_regalias = Column(Float, nullable=False, default=0)
     total = Column(Float, nullable=False)
     metodo_pago = Column(String(20), nullable=False)
     monto_recibido = Column(Float, nullable=True)
@@ -92,12 +94,12 @@ class DetalleVenta(Base):
     venta_id = Column(Integer, ForeignKey("ventas.id"), nullable=False)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
 
-    # Float para soportar peso variable (1.5 kg, 250 g, etc.)
     cantidad = Column(Float, nullable=False)
     precio_unit = Column(Float, nullable=False)
-    # Costo congelado al momento de la venta - clave para reportes históricos
     costo_unit = Column(Float, nullable=False, default=0)
+    descuento_item = Column(Float, nullable=False, default=0)
     subtotal = Column(Float, nullable=False)
+    es_regalia = Column(Boolean, nullable=False, default=False)
 
     venta = relationship("Venta", back_populates="detalles")
     producto = relationship("Producto", back_populates="detalles_venta")
@@ -109,6 +111,7 @@ class Compra(Base):
     id = Column(Integer, primary_key=True, index=True)
     fecha = Column(DateTime, default=datetime.now, index=True)
     proveedor = Column(String(100), nullable=True)
+    descuento = Column(Float, nullable=False, default=0)
     total = Column(Float, nullable=False)
 
     detalles = relationship(
@@ -124,9 +127,9 @@ class DetalleCompra(Base):
     id = Column(Integer, primary_key=True, index=True)
     compra_id = Column(Integer, ForeignKey("compras.id"), nullable=False)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
-    # Float para soportar productos por peso (compraste 30 kg)
     cantidad = Column(Float, nullable=False)
     costo_unit = Column(Float, nullable=False)
+    es_regalia = Column(Boolean, nullable=False, default=False)
 
     compra = relationship("Compra", back_populates="detalles")
     producto = relationship("Producto", back_populates="detalles_compra")
@@ -155,6 +158,7 @@ class CierreCaja(Base):
     total_sinpe = Column(Float, default=0)
     total_tarjeta = Column(Float, default=0)
     cantidad_ventas = Column(Integer, default=0)
+    monto_bonificado = Column(Float, default=0)
     notas = Column(String(500), nullable=True)
 
 

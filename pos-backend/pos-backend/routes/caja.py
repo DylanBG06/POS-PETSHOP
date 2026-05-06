@@ -67,6 +67,8 @@ def _calcular_resumen(db: Session, desde: datetime, hasta: datetime, apertura: O
     total_efectivo = sum(v.total for v in ventas if v.metodo_pago == "efectivo")
     total_sinpe = sum(v.total for v in ventas if v.metodo_pago == "sinpe")
     total_tarjeta = sum(v.total for v in ventas if v.metodo_pago == "tarjeta")
+    monto_bonificado = sum(getattr(v, 'monto_regalias', 0) or 0 for v in ventas)
+    monto_descuentos = sum(getattr(v, 'descuento', 0) or 0 for v in ventas)
 
     monto_apertura = apertura.monto if apertura else 0
     total_esperado = round(monto_apertura + total_efectivo, 2)
@@ -80,6 +82,8 @@ def _calcular_resumen(db: Session, desde: datetime, hasta: datetime, apertura: O
         monto_apertura=round(monto_apertura, 2),
         total_esperado_cierre=total_esperado,
         tiene_apertura=apertura is not None,
+        monto_bonificado=round(monto_bonificado, 2),
+        monto_descuentos=round(monto_descuentos, 2),
     )
 
 
@@ -151,6 +155,7 @@ def cerrar_caja(cierre: schemas.CierreCajaCreate, db: Session = Depends(get_db))
         total_sinpe=resumen.total_sinpe,
         total_tarjeta=resumen.total_tarjeta,
         cantidad_ventas=resumen.cantidad_ventas,
+        monto_bonificado=resumen.monto_bonificado,
         notas=cierre.notas,
     )
     db.add(db_cierre)

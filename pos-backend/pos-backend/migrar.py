@@ -55,6 +55,30 @@ def main():
         if not column_exists(cur, "ventas", "usuario_id"):
             cur.execute("ALTER TABLE ventas ADD COLUMN usuario_id INTEGER")
             cambios.append("ventas.usuario_id")
+        if not column_exists(cur, "ventas", "descuento"):
+            cur.execute("ALTER TABLE ventas ADD COLUMN descuento FLOAT NOT NULL DEFAULT 0")
+            cambios.append("ventas.descuento")
+        if not column_exists(cur, "ventas", "monto_regalias"):
+            cur.execute("ALTER TABLE ventas ADD COLUMN monto_regalias FLOAT NOT NULL DEFAULT 0")
+            cambios.append("ventas.monto_regalias")
+
+    if table_exists(cur, "detalle_venta"):
+        if not column_exists(cur, "detalle_venta", "es_regalia"):
+            cur.execute("ALTER TABLE detalle_venta ADD COLUMN es_regalia BOOLEAN NOT NULL DEFAULT 0")
+            cambios.append("detalle_venta.es_regalia")
+        if not column_exists(cur, "detalle_venta", "descuento_item"):
+            cur.execute("ALTER TABLE detalle_venta ADD COLUMN descuento_item FLOAT NOT NULL DEFAULT 0")
+            cambios.append("detalle_venta.descuento_item")
+
+    if table_exists(cur, "compras"):
+        if not column_exists(cur, "compras", "descuento"):
+            cur.execute("ALTER TABLE compras ADD COLUMN descuento FLOAT NOT NULL DEFAULT 0")
+            cambios.append("compras.descuento")
+
+    if table_exists(cur, "detalle_compra"):
+        if not column_exists(cur, "detalle_compra", "es_regalia"):
+            cur.execute("ALTER TABLE detalle_compra ADD COLUMN es_regalia BOOLEAN NOT NULL DEFAULT 0")
+            cambios.append("detalle_compra.es_regalia")
 
     # Tabla de aperturas de caja
     if not table_exists(cur, "aperturas_caja"):
@@ -76,6 +100,9 @@ def main():
         if not column_exists(cur, "cierres_caja", "total_ventas_efectivo"):
             cur.execute("ALTER TABLE cierres_caja ADD COLUMN total_ventas_efectivo FLOAT DEFAULT 0")
             cambios.append("cierres_caja.total_ventas_efectivo")
+        if not column_exists(cur, "cierres_caja", "monto_bonificado"):
+            cur.execute("ALTER TABLE cierres_caja ADD COLUMN monto_bonificado FLOAT DEFAULT 0")
+            cambios.append("cierres_caja.monto_bonificado")
 
     conn.commit()
     conn.close()

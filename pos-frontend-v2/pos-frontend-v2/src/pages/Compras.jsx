@@ -120,6 +120,7 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
   const [busqueda, setBusqueda] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [categorias, setCategorias] = useState([])
+  const [descuento, setDescuento] = useState('')
 
   // Formulario de producto nuevo
   const [creandoProducto, setCreandoProducto] = useState(false)
@@ -127,7 +128,7 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
 
   useEffect(() => {
     if (open) {
-      setProveedor(''); setItems([]); setBusqueda('')
+      setProveedor(''); setItems([]); setBusqueda(''); setDescuento('')
       setCreandoProducto(false)
       categoriasAPI.listar().then(setCategorias).catch(() => {})
     }
@@ -144,7 +145,7 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
     if (items.find(i => i.producto_id === producto.id)) { toast.error('Ya está en la lista'); return }
     setItems([...items, {
       producto_id: producto.id, nombre: producto.nombre,
-      cantidad: 1, costo_unit: producto.costo || 0,
+      cantidad: 1, costo_unit: producto.costo || 0, es_regalia: false,
     }])
     setBusqueda('')
   }
@@ -167,7 +168,7 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
       // Agregar automáticamente a la lista de compra
       setItems([...items, {
         producto_id: creado.id, nombre: creado.nombre,
-        cantidad: 1, costo_unit: parseFloat(nuevoProducto.costo) || 0,
+        cantidad: 1, costo_unit: parseFloat(nuevoProducto.costo) || 0, es_regalia: false,
       }])
       setCreandoProducto(false)
       setNuevoProducto({ nombre: '', precio_venta: '', costo: '', categoria_id: '' })
@@ -178,7 +179,12 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, [campo]: valor } : it))
   }
 
-  const total = items.reduce((s, it) => s + (parseInt(it.cantidad) || 0) * (parseFloat(it.costo_unit) || 0), 0)
+  const subtotal = items.reduce((s, it) => {
+    if (it.es_regalia) return s
+    return s + (parseInt(it.cantidad) || 0) * (parseFloat(it.costo_unit) || 0)
+  }, 0)
+  const descNum = Math.min(subtotal, parseFloat(descuento) || 0)
+  const total = Math.max(0, subtotal - descNum)
 
   const guardar = async () => {
     if (items.length === 0) return toast.error('Agregá al menos un producto')
@@ -188,13 +194,15 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
     try {
       await comprasAPI.crear({
         proveedor: proveedor.trim() || null,
+        descuento_monto: descNum,
         detalles: items.map(it => ({
           producto_id: it.producto_id,
           cantidad: parseInt(it.cantidad),
           costo_unit: parseFloat(it.costo_unit),
+          es_regalia: !!it.es_regalia,
         })),
       })
-      toast.success('Compra registrada y stock actualizado')
+      toast.success('Compra registrada')
       onGuardar()
     } catch (err) { toast.error(err.message) }
     finally { setGuardando(false) }
@@ -251,34 +259,74 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
             <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Items de la compra</div>
             <div className="space-y-2">
               {items.map((it, idx) => (
-                <div key={idx} className="grid grid-cols-[1fr_100px_100px_90px_30px] gap-2 items-center bg-slate-50 p-2 rounded-lg">
-                  <div className="text-sm font-medium truncate">{it.nombre}</div>
-                  <div>
-                    <label className="text-xs text-slate-400 block mb-0.5">Cantidad</label>
-                    <input type="number" step="1" min="1" value={it.cantidad} onChange={e => actualizarItem(idx, 'cantidad', e.target.value)} className="input-base w-full text-sm py-1.5" />
+                <div key={idx} className={`p-2 rounded-lg ${it.es_regalia ? 'bg-pink-50 border border-pink-200' : 'bg-slate-50'}`}>
+                  <div className="grid grid-cols-[1fr_85px_100px_90px_30px] gap-2 items-center">
+                    <div>
+                      <div className="text-sm font-medium truncate flex items-center gap-1">
+                        {it.es_regalia && <span className="text-pink-600">🎁</span>}
+                        {it.nombre}
+                      </div>
+                      <button
+                        onClick={() => actualizarItem(idx, 'es_regalia', !it.es_regalia)}
+                        className={`text-xs mt-1 px-2 py-0.5 rounded font-medium transition-colors ${it.es_regalia ? 'bg-pink-200 text-pink-800' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>
+                        {it.es_regalia ? '✓ Regalía proveedor' : '+ Marcar regalía'}
+                      </button>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-0.5">Cantidad</label>
+                      <input type="number" step="1" min="1" value={it.cantidad} onChange={e => actualizarItem(idx, 'cantidad', e.target.value)} className="input-base w-full text-sm py-1.5" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-0.5">Costo unit.</label>
+                      <input type="number" step="1" min="0"
+                        value={it.es_regalia ? 0 : it.costo_unit}
+                        disabled={it.es_regalia}
+                        onChange={e => actualizarItem(idx, 'costo_unit', e.target.value)}
+                        className="input-base w-full text-sm py-1.5 disabled:bg-slate-100" />
+                    </div>
+                    <div className="text-right text-sm font-medium pt-4">
+                      {it.es_regalia ? <span className="text-pink-700">GRATIS</span> : formatColones((parseInt(it.cantidad)||0) * (parseFloat(it.costo_unit)||0))}
+                    </div>
+                    <button onClick={() => setItems(prev => prev.filter((_,i) => i !== idx))} className="text-red-500 hover:text-red-700 mt-4"><Trash2 size={14} /></button>
                   </div>
-                  <div>
-                    <label className="text-xs text-slate-400 block mb-0.5">Costo unit.</label>
-                    <input type="number" step="1" min="0" value={it.costo_unit} onChange={e => actualizarItem(idx, 'costo_unit', e.target.value)} className="input-base w-full text-sm py-1.5" />
-                  </div>
-                  <div className="text-right text-sm font-medium pt-4">{formatColones((parseInt(it.cantidad)||0) * (parseFloat(it.costo_unit)||0))}</div>
-                  <button onClick={() => setItems(prev => prev.filter((_,i) => i !== idx))} className="text-red-500 hover:text-red-700 mt-4"><Trash2 size={14} /></button>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
-          <div className="text-xs text-slate-500">{items.length} producto{items.length !== 1 ? 's' : ''}</div>
-          <div className="text-right">
+        {items.length > 0 && subtotal > 0 && (
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">Descuento del proveedor (₡)</label>
+            <input
+              type="number" min="0" max={subtotal}
+              value={descuento}
+              onChange={e => setDescuento(e.target.value)}
+              placeholder="0"
+              className="input-base w-full"
+            />
+          </div>
+        )}
+
+        <div className="border-t border-slate-200 pt-3 space-y-1">
+          <div className="flex justify-between text-sm text-slate-500">
+            <span>Subtotal</span>
+            <span>{formatColones(subtotal)}</span>
+          </div>
+          {descNum > 0 && (
+            <div className="flex justify-between text-sm text-emerald-700">
+              <span>Descuento</span>
+              <span>-{formatColones(descNum)}</span>
+            </div>
+          )}
+          <div className="flex justify-between items-baseline border-t border-slate-100 pt-2">
             <div className="text-xs text-slate-500">TOTAL</div>
             <div className="text-2xl font-bold text-brand-700">{formatColones(total)}</div>
           </div>
         </div>
 
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-          Al registrar: el <strong>stock se incrementa</strong> y el <strong>costo se actualiza</strong> automáticamente.
+          <strong>Stock siempre se incrementa</strong>, incluso para regalías. El costo solo se actualiza con productos comprados (no regalías).
         </div>
 
         <div className="flex justify-end gap-2 pt-2">

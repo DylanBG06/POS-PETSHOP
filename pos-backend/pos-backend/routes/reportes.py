@@ -245,9 +245,41 @@ def ganancia_resumen(
         models.Compra.fecha < fin,
     ).first()
 
+    # Descuentos en ventas
+    descuentos_data = db.query(
+        func.coalesce(func.sum(models.Venta.descuento), 0).label("total")
+    ).filter(
+        models.Venta.fecha >= inicio,
+        models.Venta.fecha < fin,
+    ).first()
+
+    # Regalías (valor regalado al cliente)
+    regalias_data = db.query(
+        func.coalesce(func.sum(models.Venta.monto_regalias), 0).label("total")
+    ).filter(
+        models.Venta.fecha >= inicio,
+        models.Venta.fecha < fin,
+    ).first()
+
+    # Costo absorbido por regalías (productos dados gratis al cliente)
+    costo_regalias_data = db.query(
+        func.coalesce(func.sum(
+            models.DetalleVenta.costo_unit * models.DetalleVenta.cantidad
+        ), 0).label("costo")
+    ).join(
+        models.Venta, models.DetalleVenta.venta_id == models.Venta.id
+    ).filter(
+        models.Venta.fecha >= inicio,
+        models.Venta.fecha < fin,
+        models.DetalleVenta.es_regalia == True,
+    ).first()
+
     total_ventas = round(float(ventas_data.total or 0), 2)
     ganancia_bruta = round(float(ganancia_data.ganancia or 0), 2)
     total_compras = round(float(compras_data.total or 0), 2)
+    total_descuentos = round(float(descuentos_data.total or 0), 2)
+    total_regalias = round(float(regalias_data.total or 0), 2)
+    costo_regalias = round(float(costo_regalias_data.costo or 0), 2)
     flujo_neto = round(ganancia_bruta - total_compras, 2)
 
     return schemas.GananciaResumen(
@@ -259,6 +291,9 @@ def ganancia_resumen(
         flujo_neto=flujo_neto,
         cantidad_ventas=ventas_data.cantidad or 0,
         cantidad_compras=compras_data.cantidad or 0,
+        total_descuentos=total_descuentos,
+        total_regalias=total_regalias,
+        costo_regalias=costo_regalias,
     )
 
 

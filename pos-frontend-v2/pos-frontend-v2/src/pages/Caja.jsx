@@ -119,6 +119,24 @@ export default function Caja() {
           <MetodoCard icon={Smartphone} label="SINPE" valor={resumen.total_sinpe} total={resumen.total_dia} color="brand" />
           <MetodoCard icon={CreditCard} label="Tarjeta" valor={resumen.total_tarjeta} total={resumen.total_dia} color="blue" />
         </div>
+        {(resumen.monto_bonificado > 0 || resumen.monto_descuentos > 0) && (
+          <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-100">
+            {resumen.monto_bonificado > 0 && (
+              <div className="bg-pink-50 border border-pink-200 rounded-lg p-2">
+                <div className="text-xs font-medium text-pink-700">🎁 BONIFICADO (REGALÍAS)</div>
+                <div className="text-lg font-bold text-pink-800">{formatColones(resumen.monto_bonificado)}</div>
+                <div className="text-xs text-pink-600">Valor regalado a clientes</div>
+              </div>
+            )}
+            {resumen.monto_descuentos > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2">
+                <div className="text-xs font-medium text-amber-700">💸 DESCUENTOS</div>
+                <div className="text-lg font-bold text-amber-800">{formatColones(resumen.monto_descuentos)}</div>
+                <div className="text-xs text-amber-600">Total descontado</div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Cierre */}

@@ -210,8 +210,13 @@ def desglosar_producto(
     db: Session = Depends(get_db)
 ):
     """
-    Convertir N unidades del padre en unidades del hijo especificado.
-    Ej: 1 saco de 30kg → 30 bolsas de 1kg (del hijo elegido).
+    Desglose simple O multi-formato (atómico).
+    
+    Modo simple: req.cantidad_padres + req.hijo_id
+    Modo multi-formato: req.items (lista de {hijo_id, cantidad_padres})
+    
+    Ej multi: De 1 saco de 30kg → 5 bolsas de 2kg + 2 bolsas de 5kg + 10 bolsas de 1kg
+    Eso son: 5*(2/30) + 2*(5/30) + 10*(1/30) = 1.0 saco equivalente
     """
     padre = db.query(models.Producto).filter(models.Producto.id == producto_id).first()
     if not padre:
@@ -220,43 +225,125 @@ def desglosar_producto(
     if padre.tipo_producto != "COMPRABLE":
         raise HTTPException(status_code=400, detail="Solo se pueden desglosar productos COMPRABLES")
 
-    # Buscar el hijo específico
-    hijo = db.query(models.Producto).filter(
-        models.Producto.id == req.hijo_id,
-        models.Producto.id_padre == producto_id,
-        models.Producto.activo == True,
-    ).first()
-
-    if not hijo:
-        raise HTTPException(
-            status_code=404,
-            detail="El producto hijo no existe o no pertenece a este padre"
-        )
-
-    # Validar stock suficiente
-    if padre.stock < req.cantidad_padres:
+    # Determinar modo
+    if req.items and len(req.items) > 0:
+        # MODO MULTI
+        total_padres_a_consumir = sum(item.cantidad_padres for item in req.items)
+    elif req.cantidad_padres and req.hijo_id:
+        # MODO SIMPLE
+        total_padres_a_consumir = req.cantidad_padres
+    else:
         raise HTTPException(
             status_code=400,
-            detail=f"Stock insuficiente. Hay {int(padre.stock)} disponibles, querés convertir {req.cantidad_padres}."
+            detail="Especificá 'cantidad_padres + hijo_id' o una lista 'items' con detalles"
         )
 
-    # Descontar del padre
-    padre.stock -= req.cantidad_padres
+    # Validar stock antes de cualquier cambio
+    if padre.stock < total_padres_a_consumir - 0.001:  # Tolerancia para float
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stock insuficiente. Hay {padre.stock} disponibles, necesitás {total_padres_a_consumir}."
+        )
 
-    # Sumar al hijo elegido
-    unidades_generadas = req.cantidad_padres * hijo.factor_conversion
-    hijo.stock += unidades_generadas
-    # Recalcular costo del hijo
-    hijo.costo = round(padre.costo / hijo.factor_conversion, 2)
+    # Construir lista de operaciones a aplicar
+    operaciones = []
+    if req.items:
+        for item in req.items:
+            hijo = db.query(models.Producto).filter(
+                models.Producto.id == item.hijo_id,
+                models.Producto.id_padre == producto_id,
+                models.Producto.activo == True,
+            ).first()
+            if not hijo:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"El hijo id={item.hijo_id} no existe o no pertenece a este padre"
+                )
+            unidades = item.cantidad_padres * hijo.factor_conversion
+            operaciones.append((hijo, unidades, item.cantidad_padres))
+    else:
+        hijo = db.query(models.Producto).filter(
+            models.Producto.id == req.hijo_id,
+            models.Producto.id_padre == producto_id,
+            models.Producto.activo == True,
+        ).first()
+        if not hijo:
+            raise HTTPException(
+                status_code=404,
+                detail="El hijo no existe o no pertenece a este padre"
+            )
+        unidades = req.cantidad_padres * hijo.factor_conversion
+        operaciones.append((hijo, unidades, req.cantidad_padres))
 
-    db.commit()
+    # APLICAR ATÓMICAMENTE: si algo falla, db.rollback() revierte todo
+    try:
+        padre.stock = round(padre.stock - total_padres_a_consumir, 4)
+        resumen = []
+        for hijo, unidades, padres_consumidos in operaciones:
+            hijo.stock = round(hijo.stock + unidades, 4)
+            if padre.costo > 0:
+                hijo.costo = round(padre.costo / hijo.factor_conversion, 2)
+            resumen.append({
+                "hijo_id": hijo.id,
+                "hijo_nombre": hijo.nombre,
+                "unidades_generadas": unidades,
+                "nuevo_stock": hijo.stock,
+                "padres_consumidos": padres_consumidos,
+            })
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al desglosar: {str(e)}")
 
     return {
-        "mensaje": f"Se desglosaron {req.cantidad_padres} unidad(es) de '{padre.nombre}' en {int(unidades_generadas)} unidad(es) de '{hijo.nombre}'",
+        "mensaje": f"Desglose completado: {total_padres_a_consumir} unidad(es) de '{padre.nombre}' convertidas en {len(operaciones)} formato(s)",
         "padre_stock_nuevo": padre.stock,
-        "hijo_stock_nuevo": hijo.stock,
-        "unidades_generadas": unidades_generadas,
+        "total_padres_consumidos": total_padres_a_consumir,
+        "operaciones": resumen,
     }
+
+
+@router.post("/{producto_id}/vincular-padre", response_model=schemas.ProductoOut)
+def vincular_padre(
+    producto_id: int,
+    req: schemas.VincularPadreRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Vincula un producto huérfano (sin padre) como hijo de otro producto.
+    Mantiene su stock e historial. Solo cambia tipo_producto, id_padre y factor_conversion.
+    """
+    producto = db.query(models.Producto).filter(models.Producto.id == producto_id).first()
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    if producto.id == req.id_padre:
+        raise HTTPException(status_code=400, detail="Un producto no puede ser padre de sí mismo")
+
+    padre = db.query(models.Producto).filter(models.Producto.id == req.id_padre).first()
+    if not padre:
+        raise HTTPException(status_code=404, detail="Producto padre no encontrado")
+
+    if padre.tipo_producto != "COMPRABLE":
+        raise HTTPException(status_code=400, detail="El producto padre debe ser COMPRABLE")
+
+    if padre.id_padre is not None:
+        raise HTTPException(status_code=400, detail="El padre seleccionado ya es hijo de otro producto")
+
+    try:
+        producto.tipo_producto = "DERIVADO"
+        producto.id_padre = req.id_padre
+        producto.factor_conversion = req.factor_conversion
+        # Recalcular costo automático si el padre tiene costo
+        if padre.costo > 0:
+            producto.costo = round(padre.costo / req.factor_conversion, 2)
+        db.commit()
+        db.refresh(producto)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al vincular: {str(e)}")
+
+    return _producto_a_dict(producto, db)
 
 
 @router.get("/{producto_id}/hijos", response_model=List[schemas.ProductoOut])
@@ -269,6 +356,28 @@ def obtener_hijos(producto_id: int, db: Session = Depends(get_db)):
         models.Producto.activo == True,
     ).all()
     return [_producto_a_dict(h, db) for h in hijos]
+
+
+@router.get("/utils/huerfanos", response_model=List[schemas.ProductoOut])
+def listar_huerfanos(db: Session = Depends(get_db)):
+    """
+    Productos sin padre que podrían vincularse:
+    activos, sin id_padre, y que NO tienen hijos (no son padres ya).
+    """
+    todos = db.query(models.Producto).options(
+        joinedload(models.Producto.categoria)
+    ).filter(
+        models.Producto.activo == True,
+        models.Producto.id_padre == None,
+    ).all()
+
+    # Filtrar los que ya son padres de otros
+    ids_que_son_padres = set(
+        row[0] for row in db.query(models.Producto.id_padre)
+        .filter(models.Producto.id_padre != None).distinct().all()
+    )
+    huerfanos = [p for p in todos if p.id not in ids_que_son_padres]
+    return [_producto_a_dict(p, db) for p in huerfanos]
 
 
 @router.get("/alertas/stock-bajo", response_model=List[schemas.ProductoOut])
