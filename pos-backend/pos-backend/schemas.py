@@ -182,6 +182,8 @@ class CompraCreate(BaseModel):
     proveedor: Optional[str] = None
     detalles: List[DetalleCompraCreate]
     descuento_monto: float = Field(ge=0, default=0)
+    iva_monto: float = Field(ge=0, default=0)        # IVA en colones
+    iva_porcentaje: float = Field(ge=0, le=100, default=0)  # IVA en %
 
 
 class DetalleCompraOut(BaseModel):
@@ -201,6 +203,7 @@ class CompraOut(BaseModel):
     fecha: datetime
     proveedor: Optional[str]
     descuento: float = 0
+    iva: float = 0
     total: float
     detalles: List[DetalleCompraOut] = []
 

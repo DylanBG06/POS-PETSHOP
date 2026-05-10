@@ -177,6 +177,86 @@ def listar_cierres(limit: int = 30, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/cierres/{cierre_id}/ventas")
+def ventas_de_cierre(cierre_id: int, db: Session = Depends(get_db)):
+    """
+    Devuelve las ventas que corresponden a un cierre específico.
+    Busca ventas entre el cierre anterior y este cierre.
+    """
+    from sqlalchemy.orm import joinedload
+
+    cierre = db.query(models.CierreCaja).filter(models.CierreCaja.id == cierre_id).first()
+    if not cierre:
+        raise HTTPException(status_code=404, detail="Cierre no encontrado")
+
+    # Buscar el cierre anterior al actual
+    cierre_anterior = (
+        db.query(models.CierreCaja)
+        .filter(models.CierreCaja.fecha_cierre < cierre.fecha_cierre)
+        .order_by(models.CierreCaja.fecha_cierre.desc())
+        .first()
+    )
+
+    desde = cierre_anterior.fecha_cierre if cierre_anterior else datetime.combine(
+        cierre.fecha_cierre.date(), datetime.min.time()
+    )
+    hasta = cierre.fecha_cierre
+
+    ventas = (
+        db.query(models.Venta)
+        .options(
+            joinedload(models.Venta.detalles)
+            .joinedload(models.DetalleVenta.producto)
+        )
+        .filter(
+            models.Venta.fecha >= desde,
+            models.Venta.fecha <= hasta,
+        )
+        .order_by(models.Venta.fecha.desc())
+        .all()
+    )
+
+    # Agrupar productos vendidos
+    productos = {}
+    for v in ventas:
+        for d in v.detalles:
+            key = d.producto_id
+            if key not in productos:
+                productos[key] = {
+                    "nombre": d.producto.nombre,
+                    "cantidad": 0,
+                    "total": 0,
+                    "cantidad_regalia": 0,
+                }
+            if getattr(d, 'es_regalia', False):
+                productos[key]["cantidad_regalia"] += d.cantidad
+            else:
+                productos[key]["total"] += d.subtotal
+            productos[key]["cantidad"] += d.cantidad
+
+    return {
+        "cierre_id": cierre.id,
+        "fecha_cierre": cierre.fecha_cierre,
+        "desde": desde,
+        "hasta": hasta,
+        "cantidad_ventas": len(ventas),
+        "total_efectivo": cierre.total_efectivo,
+        "total_sinpe": cierre.total_sinpe,
+        "total_tarjeta": cierre.total_tarjeta,
+        "monto_apertura": cierre.monto_apertura or 0,
+        "total_esperado": cierre.total_esperado,
+        "total_real": cierre.total_real,
+        "diferencia": cierre.diferencia,
+        "monto_bonificado": getattr(cierre, 'monto_bonificado', 0) or 0,
+        "notas": cierre.notas,
+        "productos_vendidos": sorted(
+            list(productos.values()),
+            key=lambda x: x["total"],
+            reverse=True
+        ),
+    }
+
+
 @router.delete("/cierres/{cierre_id}", status_code=204)
 def eliminar_cierre(cierre_id: int, db: Session = Depends(get_db)):
     cierre = db.query(models.CierreCaja).filter(models.CierreCaja.id == cierre_id).first()

@@ -121,6 +121,8 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
   const [guardando, setGuardando] = useState(false)
   const [categorias, setCategorias] = useState([])
   const [descuento, setDescuento] = useState('')
+  const [ivaMonto, setIvaMonto] = useState('')
+  const [ivaPct, setIvaPct] = useState('')
 
   // Formulario de producto nuevo
   const [creandoProducto, setCreandoProducto] = useState(false)
@@ -129,6 +131,7 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
   useEffect(() => {
     if (open) {
       setProveedor(''); setItems([]); setBusqueda(''); setDescuento('')
+      setIvaMonto(''); setIvaPct('')
       setCreandoProducto(false)
       categoriasAPI.listar().then(setCategorias).catch(() => {})
     }
@@ -184,7 +187,11 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
     return s + (parseInt(it.cantidad) || 0) * (parseFloat(it.costo_unit) || 0)
   }, 0)
   const descNum = Math.min(subtotal, parseFloat(descuento) || 0)
-  const total = Math.max(0, subtotal - descNum)
+  const subtotalConDesc = subtotal - descNum
+  const ivaM = parseFloat(ivaMonto) || 0
+  const ivaP = parseFloat(ivaPct) || 0
+  const ivaTotal = Math.round(ivaM + (subtotalConDesc * ivaP / 100))
+  const total = Math.max(0, subtotalConDesc + ivaTotal)
 
   const guardar = async () => {
     if (items.length === 0) return toast.error('Agregá al menos un producto')
@@ -195,6 +202,8 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
       await comprasAPI.crear({
         proveedor: proveedor.trim() || null,
         descuento_monto: descNum,
+        iva_monto: ivaM,
+        iva_porcentaje: ivaP,
         detalles: items.map(it => ({
           producto_id: it.producto_id,
           cantidad: parseInt(it.cantidad),
@@ -296,15 +305,18 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
         )}
 
         {items.length > 0 && subtotal > 0 && (
-          <div>
-            <label className="text-xs text-slate-500 mb-1 block">Descuento del proveedor (₡)</label>
-            <input
-              type="number" min="0" max={subtotal}
-              value={descuento}
-              onChange={e => setDescuento(e.target.value)}
-              placeholder="0"
-              className="input-base w-full"
-            />
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Descuento del proveedor (₡)</label>
+              <input type="number" min="0" max={subtotal} value={descuento} onChange={e => setDescuento(e.target.value)} placeholder="0" className="input-base w-full" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">IVA (impuesto)</label>
+              <div className="grid grid-cols-2 gap-2">
+                <input type="number" min="0" value={ivaMonto} onChange={e => setIvaMonto(e.target.value)} placeholder="Monto ₡" className="input-base w-full" />
+                <input type="number" min="0" max="100" value={ivaPct} onChange={e => setIvaPct(e.target.value)} placeholder="% (ej: 13)" className="input-base w-full" />
+              </div>
+            </div>
           </div>
         )}
 
@@ -317,6 +329,12 @@ function CompraModal({ open, onClose, productos, onGuardar }) {
             <div className="flex justify-between text-sm text-emerald-700">
               <span>Descuento</span>
               <span>-{formatColones(descNum)}</span>
+            </div>
+          )}
+          {ivaTotal > 0 && (
+            <div className="flex justify-between text-sm text-amber-700">
+              <span>IVA</span>
+              <span>+{formatColones(ivaTotal)}</span>
             </div>
           )}
           <div className="flex justify-between items-baseline border-t border-slate-100 pt-2">
@@ -361,9 +379,17 @@ function DetalleModal({ compra, onClose }) {
             </div>
           ))}
         </div>
-        <div className="border-t border-slate-200 pt-3 flex justify-between items-baseline">
-          <span className="text-sm text-slate-500">Total</span>
-          <span className="text-2xl font-bold text-brand-700">{formatColones(compra.total)}</span>
+        <div className="border-t border-slate-200 pt-3 space-y-1">
+          {(compra.descuento || 0) > 0 && (
+            <div className="flex justify-between text-sm text-emerald-700"><span>Descuento</span><span>-{formatColones(compra.descuento)}</span></div>
+          )}
+          {(compra.iva || 0) > 0 && (
+            <div className="flex justify-between text-sm text-amber-700"><span>IVA</span><span>+{formatColones(compra.iva)}</span></div>
+          )}
+          <div className="flex justify-between items-baseline border-t border-slate-100 pt-2">
+            <span className="text-sm text-slate-500">Total</span>
+            <span className="text-2xl font-bold text-brand-700">{formatColones(compra.total)}</span>
+          </div>
         </div>
       </div>
     </Modal>

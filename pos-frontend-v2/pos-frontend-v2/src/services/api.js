@@ -74,6 +74,7 @@ export const cajaAPI = {
   registrarApertura: (data) => api.post('/caja/apertura', data).then(r => r.data),
   cerrar: (data) => api.post('/caja/cerrar', data).then(r => r.data),
   cierres: (limit = 30) => api.get('/caja/cierres', { params: { limit } }).then(r => r.data),
+  ventasDeCierre: (cierreId) => api.get(`/caja/cierres/${cierreId}/ventas`).then(r => r.data),
   eliminarCierre: (id) => api.delete(`/caja/cierres/${id}`),
 }
 

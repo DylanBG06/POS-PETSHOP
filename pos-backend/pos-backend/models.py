@@ -112,6 +112,7 @@ class Compra(Base):
     fecha = Column(DateTime, default=datetime.now, index=True)
     proveedor = Column(String(100), nullable=True)
     descuento = Column(Float, nullable=False, default=0)
+    iva = Column(Float, nullable=False, default=0)
     total = Column(Float, nullable=False)
 
     detalles = relationship(

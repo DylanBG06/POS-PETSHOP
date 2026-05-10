@@ -74,6 +74,9 @@ def main():
         if not column_exists(cur, "compras", "descuento"):
             cur.execute("ALTER TABLE compras ADD COLUMN descuento FLOAT NOT NULL DEFAULT 0")
             cambios.append("compras.descuento")
+        if not column_exists(cur, "compras", "iva"):
+            cur.execute("ALTER TABLE compras ADD COLUMN iva FLOAT NOT NULL DEFAULT 0")
+            cambios.append("compras.iva")
 
     if table_exists(cur, "detalle_compra"):
         if not column_exists(cur, "detalle_compra", "es_regalia"):

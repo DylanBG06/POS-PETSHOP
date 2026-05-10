@@ -59,7 +59,17 @@ def registrar_compra(compra: schemas.CompraCreate, db: Session = Depends(get_db)
 
     # Aplicar descuento
     descuento = round(min(compra.descuento_monto, subtotal), 2) if compra.descuento_monto > 0 else 0
-    total = round(subtotal - descuento, 2)
+    subtotal_con_descuento = subtotal - descuento
+
+    # Aplicar IVA
+    iva = 0.0
+    if compra.iva_monto > 0:
+        iva += compra.iva_monto
+    if compra.iva_porcentaje > 0:
+        iva += subtotal_con_descuento * (compra.iva_porcentaje / 100)
+    iva = round(iva, 2)
+
+    total = round(subtotal_con_descuento + iva, 2)
     if total < 0:
         total = 0
 
@@ -68,6 +78,7 @@ def registrar_compra(compra: schemas.CompraCreate, db: Session = Depends(get_db)
         db_compra = models.Compra(
             proveedor=compra.proveedor,
             descuento=descuento,
+            iva=iva,
             total=total,
         )
         db.add(db_compra)
