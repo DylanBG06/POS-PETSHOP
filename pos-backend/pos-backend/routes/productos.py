@@ -210,14 +210,10 @@ def desglosar_producto(
     db: Session = Depends(get_db)
 ):
     """
-    Desglose simple O multi-formato (atómico).
-    
-    Modo simple: req.cantidad_padres + req.hijo_id
-    Modo multi-formato: req.items (lista de {hijo_id, cantidad_padres})
-    
-    Ej multi: De 1 saco de 30kg → 5 bolsas de 2kg + 2 bolsas de 5kg + 10 bolsas de 1kg
-    Eso son: 5*(2/30) + 2*(5/30) + 10*(1/30) = 1.0 saco equivalente
+    Desglose simple O multi-formato (atómico, robusto ante decimales).
     """
+    import math
+
     padre = db.query(models.Producto).filter(models.Producto.id == producto_id).first()
     if not padre:
         raise HTTPException(status_code=404, detail="Producto padre no encontrado")
@@ -225,82 +221,119 @@ def desglosar_producto(
     if padre.tipo_producto != "COMPRABLE":
         raise HTTPException(status_code=400, detail="Solo se pueden desglosar productos COMPRABLES")
 
-    # Determinar modo
-    if req.items and len(req.items) > 0:
-        # MODO MULTI
-        total_padres_a_consumir = sum(item.cantidad_padres for item in req.items)
-    elif req.cantidad_padres and req.hijo_id:
-        # MODO SIMPLE
-        total_padres_a_consumir = req.cantidad_padres
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Especificá 'cantidad_padres + hijo_id' o una lista 'items' con detalles"
-        )
+    # Helpers para validar números
+    def es_numero_valido(n):
+        try:
+            f = float(n)
+            return not (math.isnan(f) or math.isinf(f)) and f > 0
+        except (TypeError, ValueError):
+            return False
 
-    # Validar stock antes de cualquier cambio
-    if padre.stock < total_padres_a_consumir - 0.001:  # Tolerancia para float
-        raise HTTPException(
-            status_code=400,
-            detail=f"Stock insuficiente. Hay {padre.stock} disponibles, necesitás {total_padres_a_consumir}."
-        )
-
-    # Construir lista de operaciones a aplicar
+    # Construir lista de operaciones
     operaciones = []
-    if req.items:
-        for item in req.items:
+    total_padres_a_consumir = 0.0
+
+    try:
+        if req.items and len(req.items) > 0:
+            # MODO MULTI
+            for item in req.items:
+                if not es_numero_valido(item.cantidad_padres):
+                    raise HTTPException(status_code=400, detail=f"Cantidad inválida para hijo {item.hijo_id}")
+
+                hijo = db.query(models.Producto).filter(
+                    models.Producto.id == item.hijo_id,
+                    models.Producto.id_padre == producto_id,
+                    models.Producto.activo == True,
+                ).first()
+                if not hijo:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"El hijo id={item.hijo_id} no existe o no pertenece a este padre"
+                    )
+                if not hijo.factor_conversion or hijo.factor_conversion <= 0:
+                    raise HTTPException(status_code=400, detail=f"Factor inválido para hijo {hijo.nombre}")
+
+                cantidad_padres = float(item.cantidad_padres)
+                unidades = cantidad_padres * float(hijo.factor_conversion)
+                operaciones.append((hijo, unidades, cantidad_padres))
+                total_padres_a_consumir += cantidad_padres
+
+        elif req.cantidad_padres and req.hijo_id:
+            # MODO SIMPLE
+            if not es_numero_valido(req.cantidad_padres):
+                raise HTTPException(status_code=400, detail="Cantidad inválida")
+
             hijo = db.query(models.Producto).filter(
-                models.Producto.id == item.hijo_id,
+                models.Producto.id == req.hijo_id,
                 models.Producto.id_padre == producto_id,
                 models.Producto.activo == True,
             ).first()
             if not hijo:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"El hijo id={item.hijo_id} no existe o no pertenece a este padre"
-                )
-            unidades = item.cantidad_padres * hijo.factor_conversion
-            operaciones.append((hijo, unidades, item.cantidad_padres))
-    else:
-        hijo = db.query(models.Producto).filter(
-            models.Producto.id == req.hijo_id,
-            models.Producto.id_padre == producto_id,
-            models.Producto.activo == True,
-        ).first()
-        if not hijo:
-            raise HTTPException(
-                status_code=404,
-                detail="El hijo no existe o no pertenece a este padre"
-            )
-        unidades = req.cantidad_padres * hijo.factor_conversion
-        operaciones.append((hijo, unidades, req.cantidad_padres))
+                raise HTTPException(status_code=404, detail="El hijo no existe o no pertenece a este padre")
+            if not hijo.factor_conversion or hijo.factor_conversion <= 0:
+                raise HTTPException(status_code=400, detail=f"Factor inválido para hijo {hijo.nombre}")
 
-    # APLICAR ATÓMICAMENTE: si algo falla, db.rollback() revierte todo
-    try:
-        padre.stock = round(padre.stock - total_padres_a_consumir, 4)
+            cantidad_padres = float(req.cantidad_padres)
+            unidades = cantidad_padres * float(hijo.factor_conversion)
+            operaciones.append((hijo, unidades, cantidad_padres))
+            total_padres_a_consumir = cantidad_padres
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Especificá 'cantidad_padres + hijo_id' o una lista 'items'"
+            )
+
+        # Redondear total para evitar problemas de precisión (46/6=7.666... etc)
+        total_padres_a_consumir = round(total_padres_a_consumir, 6)
+
+        # Validar stock con tolerancia generosa de 0.01 (1%)
+        if padre.stock < total_padres_a_consumir - 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Stock insuficiente. Hay {padre.stock} disponibles, querés convertir {round(total_padres_a_consumir, 4)}."
+            )
+
+        # APLICAR ATÓMICAMENTE
+        nuevo_stock_padre = padre.stock - total_padres_a_consumir
+
+        # Limpiar restos diminutos por imprecisión decimal (< 0.01)
+        if abs(nuevo_stock_padre) < 0.01:
+            nuevo_stock_padre = 0
+        # Asegurar que nunca quede negativo
+        nuevo_stock_padre = max(0, nuevo_stock_padre)
+
+        padre.stock = round(nuevo_stock_padre, 4)
+
         resumen = []
         for hijo, unidades, padres_consumidos in operaciones:
-            hijo.stock = round(hijo.stock + unidades, 4)
-            if padre.costo > 0:
-                hijo.costo = round(padre.costo / hijo.factor_conversion, 2)
+            # Redondear unidades a entero (no tiene sentido vender 6.999 bolsas)
+            unidades_redondeadas = round(unidades)
+            hijo.stock = round(hijo.stock + unidades_redondeadas, 4)
+            if padre.costo > 0 and hijo.factor_conversion > 0:
+                hijo.costo = round(float(padre.costo) / float(hijo.factor_conversion), 2)
             resumen.append({
                 "hijo_id": hijo.id,
                 "hijo_nombre": hijo.nombre,
-                "unidades_generadas": unidades,
+                "unidades_generadas": unidades_redondeadas,
                 "nuevo_stock": hijo.stock,
-                "padres_consumidos": padres_consumidos,
+                "padres_consumidos": round(padres_consumidos, 4),
             })
+
         db.commit()
+
+        return {
+            "mensaje": f"Desglose completado: convertido en {len(operaciones)} formato(s)",
+            "padre_stock_nuevo": padre.stock,
+            "total_padres_consumidos": round(total_padres_a_consumir, 4),
+            "operaciones": resumen,
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al desglosar: {str(e)}")
-
-    return {
-        "mensaje": f"Desglose completado: {total_padres_a_consumir} unidad(es) de '{padre.nombre}' convertidas en {len(operaciones)} formato(s)",
-        "padre_stock_nuevo": padre.stock,
-        "total_padres_consumidos": total_padres_a_consumir,
-        "operaciones": resumen,
-    }
 
 
 @router.post("/{producto_id}/vincular-padre", response_model=schemas.ProductoOut)

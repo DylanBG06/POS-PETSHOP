@@ -279,34 +279,45 @@ function DesgloseModal({ producto, onClose, onGuardar }) {
   // Calcular total de "padres equivalentes" consumidos
   const totalPadresConsumidos = hijos.reduce((sum, h) => {
     const cantidadHijo = parseFloat(items[h.id] || 0)
+    if (!cantidadHijo || cantidadHijo <= 0 || !h.factor_conversion) return sum
     return sum + (cantidadHijo / h.factor_conversion)
   }, 0)
 
-  const stockSuficiente = totalPadresConsumidos <= producto.stock + 0.001
-  const tieneAlgo = totalPadresConsumidos > 0
+  // Tolerancia de 1% para evitar problemas de decimales periódicos (ej: 46/6=7.666...)
+  const stockSuficiente = totalPadresConsumidos <= producto.stock + 0.01
+  const tieneAlgo = totalPadresConsumidos > 0.0001
+  const stockRestante = Math.max(0, producto.stock - totalPadresConsumidos)
+  const porcentajeUsado = producto.stock > 0 ? (totalPadresConsumidos / producto.stock) * 100 : 0
 
   const cambiarCantidad = (hijoId, valor) => {
-    setItems(prev => ({ ...prev, [hijoId]: valor }))
+    // Validar que sea un número positivo o vacío
+    if (valor === '' || /^\d*\.?\d*$/.test(valor)) {
+      setItems(prev => ({ ...prev, [hijoId]: valor }))
+    }
   }
 
   const desglosar = async () => {
     if (!tieneAlgo) return toast.error('Ingresá al menos una cantidad')
-    if (!stockSuficiente) return toast.error(`Necesitás ${totalPadresConsumidos.toFixed(2)} unidades, hay ${producto.stock}`)
+    if (!stockSuficiente) return toast.error(`Necesitás ${totalPadresConsumidos.toFixed(3)} unidades, hay ${producto.stock}`)
 
-    // Construir items para el backend (solo los con cantidad > 0)
+    // Construir items para el backend (solo los con cantidad > 0 y factor válido)
     const itemsBody = hijos
-      .filter(h => parseFloat(items[h.id] || 0) > 0)
+      .filter(h => parseFloat(items[h.id] || 0) > 0 && h.factor_conversion > 0)
       .map(h => ({
         hijo_id: h.id,
         cantidad_padres: parseFloat(items[h.id]) / h.factor_conversion,
       }))
+
+    if (itemsBody.length === 0) return toast.error('Ningún formato válido seleccionado')
 
     setProcesando(true)
     try {
       const res = await productosAPI.desglosar(producto.id, { items: itemsBody })
       toast.success(res.mensaje, { duration: 5000 })
       onGuardar()
-    } catch (err) { toast.error(err.message) }
+    } catch (err) {
+      toast.error(err.message || 'Error al desglosar')
+    }
     finally { setProcesando(false) }
   }
 
@@ -343,7 +354,7 @@ function DesgloseModal({ producto, onClose, onGuardar }) {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <input
-                        type="number" min="0" step="1"
+                        type="text" inputMode="decimal"
                         value={items[h.id] || ''}
                         onChange={e => cambiarCantidad(h.id, e.target.value)}
                         placeholder="0"
@@ -354,22 +365,38 @@ function DesgloseModal({ producto, onClose, onGuardar }) {
                   </div>
                   {cantidadHijo > 0 && (
                     <div className="mt-2 text-xs text-brand-700 bg-brand-50 rounded px-2 py-1">
-                      Consume {padresConsumidos.toFixed(3)} unidades del padre
+                      Consume {padresConsumidos.toFixed(4)} unidades del padre
                     </div>
                   )}
                 </div>
               )
             })}
 
+            {/* Resumen visual del consumo */}
             <div className={`rounded-lg p-3 mt-3 border ${stockSuficiente ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium">Total padres consumidos:</span>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium">Total consumido:</span>
                 <span className={`text-lg font-bold ${stockSuficiente ? 'text-emerald-700' : 'text-red-700'}`}>
-                  {totalPadresConsumidos.toFixed(3)} / {producto.stock}
+                  {totalPadresConsumidos.toFixed(4)} / {producto.stock}
                 </span>
               </div>
+              {tieneAlgo && stockSuficiente && (
+                <>
+                  <div className="text-xs text-slate-600 mb-1">
+                    Uso: <strong>{porcentajeUsado.toFixed(1)}%</strong> del stock
+                  </div>
+                  <div className="text-xs text-slate-600">
+                    Restante después del desglose: <strong>{stockRestante.toFixed(4)} unidades</strong>
+                    {stockRestante < 0.01 && stockRestante > 0 && (
+                      <span className="text-emerald-700 ml-1">(se limpia a 0 automáticamente)</span>
+                    )}
+                  </div>
+                </>
+              )}
               {!stockSuficiente && tieneAlgo && (
-                <div className="text-xs text-red-700 mt-1">No alcanza el stock disponible</div>
+                <div className="text-xs text-red-700 mt-1">
+                  ⚠️ Excede el stock disponible. Reducí las cantidades.
+                </div>
               )}
             </div>
           </div>
