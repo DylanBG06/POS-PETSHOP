@@ -236,13 +236,15 @@ def ganancia_resumen(
         models.Venta.fecha < fin,
     ).first()
 
-    # Compras
-    compras_data = db.query(
-        func.coalesce(func.sum(models.Compra.total), 0).label("total"),
-        func.count(models.Compra.id).label("cantidad"),
+    # Ingresos de inventario (total invertido en costo)
+    ingresos_data = db.query(
+        func.coalesce(func.sum(
+            models.Ingreso.cantidad * models.Ingreso.costo_unit
+        ), 0).label("total"),
+        func.count(models.Ingreso.id).label("cantidad"),
     ).filter(
-        models.Compra.fecha >= inicio,
-        models.Compra.fecha < fin,
+        models.Ingreso.fecha >= inicio,
+        models.Ingreso.fecha < fin,
     ).first()
 
     # Descuentos en ventas
@@ -276,7 +278,7 @@ def ganancia_resumen(
 
     total_ventas = round(float(ventas_data.total or 0), 2)
     ganancia_bruta = round(float(ganancia_data.ganancia or 0), 2)
-    total_compras = round(float(compras_data.total or 0), 2)
+    total_compras = round(float(ingresos_data.total or 0), 2)
     total_descuentos = round(float(descuentos_data.total or 0), 2)
     total_regalias = round(float(regalias_data.total or 0), 2)
     costo_regalias = round(float(costo_regalias_data.costo or 0), 2)
@@ -290,7 +292,7 @@ def ganancia_resumen(
         total_compras=total_compras,
         flujo_neto=flujo_neto,
         cantidad_ventas=ventas_data.cantidad or 0,
-        cantidad_compras=compras_data.cantidad or 0,
+        cantidad_compras=ingresos_data.cantidad or 0,
         total_descuentos=total_descuentos,
         total_regalias=total_regalias,
         costo_regalias=costo_regalias,
@@ -329,12 +331,12 @@ def ganancia_por_dia(
     ).group_by(func.date(models.Venta.fecha)).all()
 
     compras_dia = db.query(
-        func.date(models.Compra.fecha).label("dia"),
-        func.sum(models.Compra.total).label("total"),
+        func.date(models.Ingreso.fecha).label("dia"),
+        func.sum(models.Ingreso.cantidad * models.Ingreso.costo_unit).label("total"),
     ).filter(
-        models.Compra.fecha >= inicio,
-        models.Compra.fecha < fin,
-    ).group_by(func.date(models.Compra.fecha)).all()
+        models.Ingreso.fecha >= inicio,
+        models.Ingreso.fecha < fin,
+    ).group_by(func.date(models.Ingreso.fecha)).all()
 
     def _parse(d):
         return datetime.strptime(d, "%Y-%m-%d").date() if isinstance(d, str) else d
@@ -398,10 +400,12 @@ def ganancia_mensual(
         ).scalar() or 0
 
         compras = db.query(
-            func.coalesce(func.sum(models.Compra.total), 0)
+            func.coalesce(func.sum(
+                models.Ingreso.cantidad * models.Ingreso.costo_unit
+            ), 0)
         ).filter(
-            models.Compra.fecha >= inicio,
-            models.Compra.fecha < fin,
+            models.Ingreso.fecha >= inicio,
+            models.Ingreso.fecha < fin,
         ).scalar() or 0
 
         salida.append(schemas.GananciaPorMes(

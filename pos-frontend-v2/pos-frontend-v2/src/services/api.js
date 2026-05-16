@@ -54,6 +54,12 @@ export const categoriasAPI = {
   eliminar: (id) => api.delete(`/categorias/${id}`),
 }
 
+export const ingresosAPI = {
+  listar: (params = {}) => api.get('/ingresos/', { params }).then(r => r.data),
+  crear: (data) => api.post('/ingresos/', data).then(r => r.data),
+  eliminar: (id) => api.delete(`/ingresos/${id}`),
+}
+
 export const ventasAPI = {
   listar: (params = {}) => api.get('/ventas/', { params }).then(r => r.data),
   listarDesde: (desde) => api.get('/ventas/', { params: { fecha_inicio: desde.split('T')[0], limit: 200 } }).then(r => r.data),

@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { ShoppingCart, Package, Wallet, BarChart3, Truck, Settings, LogOut, User } from 'lucide-react'
+import { ShoppingCart, Package, Wallet, BarChart3, PackagePlus, Settings, LogOut, User } from 'lucide-react'
 import { useEffect, useState, useRef } from 'react'
 import { configAPI } from '../services/api'
 
@@ -8,7 +8,7 @@ const links = [
   { to: '/inventario',   label: 'Inventario',   icon: Package },
   { to: '/caja',         label: 'Caja',         icon: Wallet },
   { to: '/reportes',     label: 'Reportes',     icon: BarChart3 },
-  { to: '/compras',      label: 'Compras',      icon: Truck },
+  { to: '/ingresos',     label: 'Ingresos',     icon: PackagePlus },
   { to: '/configuracion',label: 'Configuración',icon: Settings },
 ]
 

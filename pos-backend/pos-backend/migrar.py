@@ -107,6 +107,38 @@ def main():
             cur.execute("ALTER TABLE cierres_caja ADD COLUMN monto_bonificado FLOAT DEFAULT 0")
             cambios.append("cierres_caja.monto_bonificado")
 
+    # Crear tabla ingresos si no existe
+    if not table_exists(cur, "ingresos"):
+        cur.execute("""
+            CREATE TABLE ingresos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+                producto_id INTEGER NOT NULL,
+                descripcion VARCHAR(200),
+                cantidad FLOAT NOT NULL,
+                costo_unit FLOAT NOT NULL,
+                venta_unit FLOAT NOT NULL,
+                FOREIGN KEY (producto_id) REFERENCES productos(id)
+            )
+        """)
+        cur.execute("CREATE INDEX idx_ingresos_fecha ON ingresos(fecha)")
+        cambios.append("tabla: ingresos")
+
+    # ELIMINAR TODAS LAS COMPRAS EXISTENTES (sistema viejo descontinuado)
+    if table_exists(cur, "detalle_compra"):
+        cur.execute("SELECT COUNT(*) FROM detalle_compra")
+        count_det = cur.fetchone()[0]
+        if count_det > 0:
+            cur.execute("DELETE FROM detalle_compra")
+            cambios.append(f"detalle_compra: {count_det} registros eliminados")
+
+    if table_exists(cur, "compras"):
+        cur.execute("SELECT COUNT(*) FROM compras")
+        count = cur.fetchone()[0]
+        if count > 0:
+            cur.execute("DELETE FROM compras")
+            cambios.append(f"compras: {count} registros eliminados")
+
     conn.commit()
     conn.close()
 

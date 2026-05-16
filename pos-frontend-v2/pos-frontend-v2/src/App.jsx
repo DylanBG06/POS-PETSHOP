@@ -6,7 +6,7 @@ import Ventas from './pages/Ventas'
 import Inventario from './pages/Inventario'
 import Caja from './pages/Caja'
 import Reportes from './pages/Reportes'
-import Compras from './pages/Compras'
+import Ingresos from './pages/Ingresos'
 import Configuracion from './pages/Configuracion'
 
 export default function App() {
@@ -25,7 +25,7 @@ export default function App() {
                 <Route path="/inventario" element={<Inventario />} />
                 <Route path="/caja" element={<Caja />} />
                 <Route path="/reportes" element={<Reportes />} />
-                <Route path="/compras" element={<Compras />} />
+                <Route path="/ingresos" element={<Ingresos />} />
                 <Route path="/configuracion" element={<Configuracion />} />
                 <Route path="*" element={<Navigate to="/ventas" replace />} />
               </Routes>

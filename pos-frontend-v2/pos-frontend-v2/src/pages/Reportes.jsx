@@ -101,11 +101,11 @@ export default function Reportes() {
         [''],
         ['Total ventas', gananciaResumen.total_ventas],
         ['Ganancia bruta', gananciaResumen.ganancia_bruta],
-        ['Total compras', gananciaResumen.total_compras],
+        ['Total ingresos', gananciaResumen.total_compras],
         ['Flujo neto', gananciaResumen.flujo_neto],
         [''],
         ['Detalle por día'],
-        ['Fecha', 'Ventas', 'Ganancia bruta', 'Compras', 'Flujo neto'],
+        ['Fecha', 'Ventas', 'Ganancia bruta', 'Ingresos', 'Flujo neto'],
         ...gananciaPorDia.map(d => [d.fecha, d.ventas, d.ganancia_bruta, d.compras, d.flujo_neto]),
       ].map(r => r.join(',')).join('\n')
       descargar(csv, `reporte-ganancias-${fechaInicio}-${fechaFin}.csv`)
@@ -273,11 +273,11 @@ function ContenidoGanancias({ resumen, porDia, mensual, añoMensual, setAñoMens
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPICard label="VENTAS" valor={formatColones(resumen.total_ventas)} subtitulo={`${resumen.cantidad_ventas} ventas`} icon={DollarSign} />
         <KPICard label="GANANCIA BRUTA" valor={formatColones(resumen.ganancia_bruta)} subtitulo="precio - costo × qty" icon={TrendingUp} resaltado="green" />
-        <KPICard label="COMPRAS" valor={formatColones(resumen.total_compras)} subtitulo={`${resumen.cantidad_compras} compras`} icon={ShoppingBag} resaltado="amber" />
+        <KPICard label="INGRESOS" valor={formatColones(resumen.total_compras)} subtitulo={`${resumen.cantidad_compras} ingresos`} icon={ShoppingBag} resaltado="amber" />
         <KPICard
           label="FLUJO NETO"
           valor={formatColones(resumen.flujo_neto)}
-          subtitulo="ganancia - compras"
+          subtitulo="ganancia - costo ingresos"
           icon={flujoEsPositivo ? TrendingUp : TrendingDown}
           resaltado={flujoEsPositivo ? "green" : "red"}
         />
@@ -290,7 +290,7 @@ function ContenidoGanancias({ resumen, porDia, mensual, añoMensual, setAñoMens
           <div className="font-medium mb-1">¿Cómo interpretar estos números?</div>
           <div className="text-xs leading-relaxed">
             <strong>Ganancia bruta</strong> = lo que ganaste por las ventas (precio menos costo del producto).<br />
-            <strong>Flujo neto</strong> = ganancia bruta menos las compras a proveedores en el periodo. Es una métrica de flujo de caja, no de utilidad real.
+            <strong>Flujo neto</strong> = ganancia bruta menos las ingresos de inventario en el periodo. Es una métrica de flujo de caja, no de utilidad real.
             Si comprás mucho stock que aún no vendiste, el flujo puede ser negativo aunque tu negocio esté sano.
           </div>
         </div>
@@ -298,7 +298,7 @@ function ContenidoGanancias({ resumen, porDia, mensual, añoMensual, setAñoMens
 
       {/* Gráfico ganancia por día */}
       <div className="card">
-        <div className="font-medium mb-3">Ganancia y compras por día</div>
+        <div className="font-medium mb-3">Ganancia e ingresos por día</div>
         {porDia.length === 0 ? (
           <div className="py-8 text-center text-slate-400">Sin datos</div>
         ) : (
@@ -315,7 +315,7 @@ function ContenidoGanancias({ resumen, porDia, mensual, añoMensual, setAñoMens
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="ganancia_bruta" name="Ganancia bruta" fill="#1D9E75" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="compras" name="Compras" fill="#EF9F27" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="compras" name="Ingresos" fill="#EF9F27" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -358,7 +358,7 @@ function ContenidoGanancias({ resumen, porDia, mensual, añoMensual, setAñoMens
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Line type="monotone" dataKey="ganancia_bruta" name="Ganancia bruta" stroke="#1D9E75" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="compras" name="Compras" stroke="#EF9F27" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="compras" name="Ingresos" stroke="#EF9F27" strokeWidth={2} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="flujo_neto" name="Flujo neto" stroke="#534AB7" strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
@@ -372,7 +372,7 @@ function ContenidoGanancias({ resumen, porDia, mensual, añoMensual, setAñoMens
                 <th className="text-left py-2 px-2 font-medium">Mes</th>
                 <th className="text-right py-2 px-2 font-medium">Ventas</th>
                 <th className="text-right py-2 px-2 font-medium">Ganancia</th>
-                <th className="text-right py-2 px-2 font-medium">Compras</th>
+                <th className="text-right py-2 px-2 font-medium">Ingresos</th>
                 <th className="text-right py-2 px-2 font-medium">Flujo neto</th>
               </tr>
             </thead>

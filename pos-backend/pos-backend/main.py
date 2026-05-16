@@ -26,6 +26,7 @@ from routes import (
     categorias,
     ventas,
     compras,
+    ingresos,
     caja,
     reportes,
     configuracion,
@@ -90,6 +91,7 @@ app.include_router(productos.router)
 app.include_router(categorias.router)
 app.include_router(ventas.router)
 app.include_router(compras.router)
+app.include_router(ingresos.router)
 app.include_router(caja.router)
 app.include_router(reportes.router)
 app.include_router(configuracion.router)

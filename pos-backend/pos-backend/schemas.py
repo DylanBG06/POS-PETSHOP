@@ -211,6 +211,31 @@ class CompraOut(BaseModel):
         from_attributes = True
 
 
+# ---------- INGRESOS ----------
+class IngresoCreate(BaseModel):
+    producto_id: int
+    descripcion: Optional[str] = None
+    cantidad: float = Field(gt=0)
+    costo_unit: float = Field(ge=0)
+    venta_unit: float = Field(ge=0)
+
+
+class IngresoOut(BaseModel):
+    id: int
+    fecha: datetime
+    producto_id: int
+    descripcion: Optional[str]
+    cantidad: float
+    costo_unit: float
+    venta_unit: float
+    total_costo: float
+    total_venta: float
+    producto: ProductoOut
+
+    class Config:
+        from_attributes = True
+
+
 # ---------- CAJA ----------
 class AperturaCajaCreate(BaseModel):
     monto: float = Field(ge=0)

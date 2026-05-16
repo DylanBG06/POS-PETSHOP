@@ -136,6 +136,21 @@ class DetalleCompra(Base):
     producto = relationship("Producto", back_populates="detalles_compra")
 
 
+class Ingreso(Base):
+    """Registro simple de ingresos de inventario."""
+    __tablename__ = "ingresos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fecha = Column(DateTime, default=datetime.now, index=True)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    descripcion = Column(String(200), nullable=True)
+    cantidad = Column(Float, nullable=False)
+    costo_unit = Column(Float, nullable=False)
+    venta_unit = Column(Float, nullable=False)
+
+    producto = relationship("Producto")
+
+
 class AperturaCaja(Base):
     __tablename__ = "aperturas_caja"
 
