@@ -35,14 +35,12 @@ export default function Ingresos() {
     } catch (err) { toast.error(err.message) }
   }
 
-  // Totales del periodo mostrado
   const totalCosto = ingresos.reduce((s, i) => s + (i.total_costo || 0), 0)
   const totalVenta = ingresos.reduce((s, i) => s + (i.total_venta || 0), 0)
   const ganancia = totalVenta - totalCosto
 
   return (
     <div className="space-y-4">
-      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="INGRESOS" valor={ingresos.length} icon={Package} />
         <StatCard label="TOTAL COSTO" valor={formatColones(totalCosto)} />
@@ -50,7 +48,6 @@ export default function Ingresos() {
         <StatCard label="GANANCIA POTENCIAL" valor={formatColones(ganancia)} variante="emerald" />
       </div>
 
-      {/* Filtros y acciones */}
       <div className="flex gap-2 items-center flex-wrap">
         <div className="flex items-center gap-2">
           <Calendar size={16} className="text-slate-400" />
@@ -68,7 +65,6 @@ export default function Ingresos() {
         </button>
       </div>
 
-      {/* Tabla */}
       <div className="card overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -162,12 +158,12 @@ function IngresoModal({ open, onClose, onGuardar }) {
     }
   }, [open])
 
-  // Buscar productos al escribir
+  // Buscar productos al escribir (sin filtrar por stock para que aparezcan productos en 0)
   useEffect(() => {
     if (!busqueda || busqueda.length < 2 || productoSel) { setProductos([]); return }
     const t = setTimeout(async () => {
       try {
-        const res = await productosAPI.buscarRapido(busqueda)
+        const res = await productosAPI.listar({ buscar: busqueda, solo_activos: true })
         setProductos(res.slice(0, 8))
       } catch { setProductos([]) }
     }, 200)
@@ -178,7 +174,6 @@ function IngresoModal({ open, onClose, onGuardar }) {
     setProductoSel(p)
     setBusqueda(p.nombre)
     setProductos([])
-    // Sugerir valores actuales del producto
     if (p.costo) setCostoUnit(p.costo)
     if (p.precio_venta) setVentaUnit(p.precio_venta)
   }
@@ -233,7 +228,6 @@ function IngresoModal({ open, onClose, onGuardar }) {
   return (
     <Modal open={open} onClose={onClose} title="Registrar ingreso de inventario" maxWidth="max-w-2xl">
       <div className="space-y-4">
-        {/* Buscador o creador de producto */}
         {!creandoProducto ? (
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Producto</label>
@@ -280,14 +274,12 @@ function IngresoModal({ open, onClose, onGuardar }) {
           </div>
         )}
 
-        {/* Descripción opcional */}
         <div>
           <label className="text-xs font-medium text-slate-500 block mb-1">Descripción (opcional)</label>
           <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)}
             placeholder="Ej: lote del 15/05, proveedor X, etc." className="input-base w-full" />
         </div>
 
-        {/* Cantidad, costo y venta */}
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Cantidad</label>
@@ -306,7 +298,6 @@ function IngresoModal({ open, onClose, onGuardar }) {
           </div>
         </div>
 
-        {/* Totales calculados */}
         {(totalCosto > 0 || totalVenta > 0) && (
           <div className="bg-slate-50 rounded-lg p-3 grid grid-cols-2 gap-3 text-sm">
             <div>
