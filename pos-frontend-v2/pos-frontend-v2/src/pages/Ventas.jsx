@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Search, Plus, Minus, X, AlertCircle, Gift } from 'lucide-react'
+import { Search, Plus, Minus, X, AlertCircle, Gift, Banknote, Smartphone, CreditCard, SplitSquareVertical } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { productosAPI, ventasAPI } from '../services/api'
 import { formatColones } from '../utils/format'
@@ -8,7 +8,11 @@ export default function Ventas() {
   const [busqueda, setBusqueda] = useState('')
   const [productos, setProductos] = useState([])
   const [carrito, setCarrito] = useState([])
+  const [pagoDividido, setPagoDividido] = useState(false)
   const [metodoPago, setMetodoPago] = useState('efectivo')
+  const [montoEfectivo, setMontoEfectivo] = useState('')
+  const [montoSinpe, setMontoSinpe] = useState('')
+  const [montoTarjeta, setMontoTarjeta] = useState('')
   const [montoRecibido, setMontoRecibido] = useState('')
   const [cobrando, setCobrando] = useState(false)
   const inputRef = useRef(null)
@@ -42,7 +46,7 @@ export default function Ventas() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busqueda, carrito, metodoPago, montoRecibido])
+  }, [busqueda, carrito, metodoPago, montoRecibido, pagoDividido, montoEfectivo, montoSinpe, montoTarjeta])
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
@@ -63,9 +67,22 @@ export default function Ventas() {
     return s + item.precio_venta * item.cantidad
   }, 0)
   const total = Math.max(0, subtotal - totalDescuentos)
+
+  // Montos para el cálculo
+  const efe = parseFloat(montoEfectivo) || 0
+  const sin = parseFloat(montoSinpe) || 0
+  const tar = parseFloat(montoTarjeta) || 0
+  const sumaPagos = pagoDividido ? (efe + sin + tar) : (
+    metodoPago === 'efectivo' ? total :
+    metodoPago === 'sinpe' ? total :
+    metodoPago === 'tarjeta' ? total : 0
+  )
   const recibido = parseFloat(montoRecibido) || 0
-  const vuelto = metodoPago === 'efectivo' ? Math.max(0, recibido - total) : 0
-  const efectivoFaltante = metodoPago === 'efectivo' && recibido > 0 && recibido < total
+  // En modo dividido el efectivo viene de montoEfectivo, en modo simple de montoRecibido
+  const efectivoCobrar = pagoDividido ? efe : (metodoPago === 'efectivo' ? total : 0)
+  const vuelto = efectivoCobrar > 0 && recibido > efectivoCobrar ? recibido - efectivoCobrar : 0
+  const efectivoFaltante = efectivoCobrar > 0 && recibido > 0 && recibido < efectivoCobrar
+  const sumaCorrecta = Math.abs(sumaPagos - total) < 0.01
 
   const agregarProducto = (producto) => {
     setCarrito(prev => {
@@ -82,41 +99,49 @@ export default function Ventas() {
   }
 
   const cambiarCantidad = (item, delta) => {
-    setCarrito(prev => prev
-      .map(p => {
-        if (p === item) {
-          const nueva = p.cantidad + delta
-          if (nueva > p.stock) {
-            toast.error(`Solo hay ${Math.floor(p.stock)} disponibles`)
-            return p
-          }
-          return { ...p, cantidad: nueva }
-        }
-        return p
-      })
-      .filter(p => p.cantidad > 0)
-    )
+    setCarrito(prev => prev.map(p => {
+      if (p === item) {
+        const nueva = p.cantidad + delta
+        if (nueva > p.stock) { toast.error(`Solo hay ${Math.floor(p.stock)} disponibles`); return p }
+        return { ...p, cantidad: nueva }
+      }
+      return p
+    }).filter(p => p.cantidad > 0))
   }
 
   const eliminar = (item) => setCarrito(prev => prev.filter(p => p !== item))
-
-  const toggleRegalia = (item) => {
-    setCarrito(prev => prev.map(p => p === item ? { ...p, es_regalia: !p.es_regalia } : p))
-  }
+  const toggleRegalia = (item) => setCarrito(prev => prev.map(p => p === item ? { ...p, es_regalia: !p.es_regalia } : p))
 
   const cancelarVenta = () => {
-    setCarrito([]); setMontoRecibido(''); setMetodoPago('efectivo')
+    setCarrito([])
+    setMontoRecibido('')
+    setMontoEfectivo(''); setMontoSinpe(''); setMontoTarjeta('')
+    setMetodoPago('efectivo')
+    setPagoDividido(false)
     inputRef.current?.focus()
   }
 
   const cobrar = async () => {
     if (!carrito.length) return
-    if (metodoPago === 'efectivo' && recibido < total) { toast.error('Monto recibido insuficiente'); return }
+    if (pagoDividido) {
+      if (!sumaCorrecta) {
+        toast.error(`La suma debe ser ₡${total.toLocaleString()}. Suma actual: ₡${sumaPagos.toLocaleString()}`)
+        return
+      }
+    } else {
+      if (metodoPago === 'efectivo' && recibido < total) {
+        toast.error('Monto recibido insuficiente')
+        return
+      }
+    }
+    if (efectivoCobrar > 0 && montoRecibido && recibido < efectivoCobrar) {
+      toast.error('Monto recibido insuficiente para cubrir el efectivo')
+      return
+    }
+
     setCobrando(true)
     try {
-      const resp = await ventasAPI.crear({
-        metodo_pago: metodoPago,
-        monto_recibido: metodoPago === 'efectivo' ? recibido : null,
+      const payload = {
         detalles: carrito.map(p => ({
           producto_id: p.id,
           cantidad: p.cantidad,
@@ -124,8 +149,21 @@ export default function Ventas() {
           descuento_monto: parseFloat(p.descuento_monto) || 0,
           descuento_porcentaje: parseFloat(p.descuento_pct) || 0,
         })),
-      })
-      const msg = metodoPago === 'efectivo' && resp.vuelto > 0
+        monto_recibido: efectivoCobrar > 0 && recibido > 0 ? recibido : null,
+      }
+      if (pagoDividido) {
+        payload.monto_efectivo = efe
+        payload.monto_sinpe = sin
+        payload.monto_tarjeta = tar
+      } else {
+        payload.metodo_pago = metodoPago
+        if (metodoPago === 'efectivo') payload.monto_efectivo = total
+        else if (metodoPago === 'sinpe') payload.monto_sinpe = total
+        else if (metodoPago === 'tarjeta') payload.monto_tarjeta = total
+      }
+
+      const resp = await ventasAPI.crear(payload)
+      const msg = resp.vuelto > 0
         ? `Venta #${resp.id} · Vuelto: ${formatColones(resp.vuelto)}`
         : `Venta #${resp.id} registrada`
       toast.success(msg, { duration: 4000 })
@@ -138,8 +176,10 @@ export default function Ventas() {
     }
   }
 
+  const restanteParaDividir = Math.max(0, total - sumaPagos)
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4">
       <div className="space-y-4">
         <div className="card">
           <div className="relative">
@@ -204,7 +244,6 @@ export default function Ventas() {
                 const subtotalItem = p.es_regalia ? 0 : Math.max(0, baseItem - descItem)
                 return (
                   <div key={idx} className={`py-3 ${p.es_regalia ? 'bg-pink-50/50 -mx-2 px-2 rounded-lg' : ''}`}>
-                    {/* Fila principal */}
                     <div className="grid grid-cols-[1fr_100px_120px_80px_30px] gap-2 items-center">
                       <div className="min-w-0">
                         <div className="font-medium text-sm truncate flex items-center gap-1.5">
@@ -229,27 +268,16 @@ export default function Ventas() {
                       </div>
                       <button onClick={() => eliminar(p)} className="text-red-500"><X size={16} /></button>
                     </div>
-                    {/* Fila de descuento por item */}
                     {!p.es_regalia && (
-                      <div className="mt-2 flex items-center gap-2 pl-0">
+                      <div className="mt-2 flex items-center gap-2">
                         <span className="text-xs text-slate-400 w-16 shrink-0">Desc. item:</span>
-                        <input
-                          type="number" min="0"
-                          value={p.descuento_monto}
+                        <input type="number" min="0" value={p.descuento_monto}
                           onChange={e => setCarrito(prev => prev.map((c, i) => i === idx ? { ...c, descuento_monto: e.target.value } : c))}
-                          placeholder="₡ monto"
-                          className="input-base text-xs py-1 w-24"
-                        />
-                        <input
-                          type="number" min="0" max="100"
-                          value={p.descuento_pct}
+                          placeholder="₡ monto" className="input-base text-xs py-1 w-24" />
+                        <input type="number" min="0" max="100" value={p.descuento_pct}
                           onChange={e => setCarrito(prev => prev.map((c, i) => i === idx ? { ...c, descuento_pct: e.target.value } : c))}
-                          placeholder="% pct"
-                          className="input-base text-xs py-1 w-20"
-                        />
-                        {descItem > 0 && (
-                          <span className="text-xs text-emerald-700 font-medium">-{formatColones(descItem)}</span>
-                        )}
+                          placeholder="% pct" className="input-base text-xs py-1 w-20" />
+                        {descItem > 0 && <span className="text-xs text-emerald-700 font-medium">-{formatColones(descItem)}</span>}
                       </div>
                     )}
                   </div>
@@ -260,7 +288,7 @@ export default function Ventas() {
         )}
       </div>
 
-      {/* DERECHA */}
+      {/* PANEL DERECHO */}
       <div className="card sticky top-[88px] h-fit space-y-3">
         <div>
           <div className="text-xs text-slate-500">SUBTOTAL</div>
@@ -284,39 +312,111 @@ export default function Ventas() {
           <div className="text-4xl font-bold text-brand-600 leading-tight">{formatColones(total)}</div>
         </div>
 
-        <div>
-          <div className="text-xs font-medium text-slate-500 mb-2">MÉTODO DE PAGO</div>
-          <div className="grid grid-cols-3 gap-1">
-            {['efectivo', 'sinpe', 'tarjeta'].map(m => (
-              <button key={m} onClick={() => setMetodoPago(m)}
-                className={`py-2 px-2 rounded-lg text-xs font-medium capitalize transition-colors ${metodoPago === m ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* Toggle pago dividido */}
+        <button onClick={() => setPagoDividido(!pagoDividido)}
+          className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium transition-colors ${pagoDividido ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+          <SplitSquareVertical size={14} />
+          {pagoDividido ? '✓ Pago dividido activado' : 'Pago dividido (cliente paga con varios métodos)'}
+        </button>
 
-        {metodoPago === 'efectivo' && (
-          <div>
-            <div className="text-xs text-slate-500 mb-1">Recibido</div>
-            <input type="number" value={montoRecibido} onChange={e => setMontoRecibido(e.target.value)}
-              placeholder="0" className="input-base w-full text-right text-lg font-medium" />
-            {efectivoFaltante && (
-              <div className="mt-2 flex items-center gap-2 text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">
-                <AlertCircle size={14} /> Faltan {formatColones(total - recibido)}
+        {!pagoDividido ? (
+          // ─── MODO SIMPLE ───
+          <>
+            <div>
+              <div className="text-xs font-medium text-slate-500 mb-2">MÉTODO DE PAGO</div>
+              <div className="grid grid-cols-3 gap-1">
+                {[
+                  { m: 'efectivo', icon: Banknote, label: 'Efectivo' },
+                  { m: 'sinpe', icon: Smartphone, label: 'SINPE' },
+                  { m: 'tarjeta', icon: CreditCard, label: 'Tarjeta' },
+                ].map(({ m, icon: Icon, label }) => (
+                  <button key={m} onClick={() => setMetodoPago(m)}
+                    className={`py-2 px-2 rounded-lg text-xs font-medium transition-colors flex flex-col items-center gap-1 ${metodoPago === m ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                    <Icon size={14} />{label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {metodoPago === 'efectivo' && (
+              <div>
+                <div className="text-xs text-slate-500 mb-1">Recibido</div>
+                <input type="number" value={montoRecibido} onChange={e => setMontoRecibido(e.target.value)}
+                  placeholder="0" className="input-base w-full text-right text-lg font-medium" />
+                {efectivoFaltante && (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">
+                    <AlertCircle size={14} /> Faltan {formatColones(total - recibido)}
+                  </div>
+                )}
+                {recibido >= total && total > 0 && (
+                  <div className="mt-2 flex justify-between items-center bg-emerald-50 px-3 py-2 rounded-lg">
+                    <span className="text-xs font-medium text-emerald-700">VUELTO</span>
+                    <span className="font-bold text-emerald-800">{formatColones(vuelto)}</span>
+                  </div>
+                )}
               </div>
             )}
-            {recibido >= total && total > 0 && (
-              <div className="mt-2 flex justify-between items-center bg-emerald-50 px-3 py-2 rounded-lg">
-                <span className="text-xs font-medium text-emerald-700">VUELTO</span>
-                <span className="font-bold text-emerald-800">{formatColones(vuelto)}</span>
+          </>
+        ) : (
+          // ─── MODO DIVIDIDO ───
+          <div className="space-y-2 bg-brand-50 rounded-lg p-3 border border-brand-200">
+            <div className="text-xs font-medium text-brand-700 mb-2">DIVIDIR EL PAGO</div>
+
+            <div>
+              <label className="text-xs text-slate-600 flex items-center gap-1 mb-1">
+                <Banknote size={12} /> Efectivo
+              </label>
+              <input type="number" min="0" value={montoEfectivo} onChange={e => setMontoEfectivo(e.target.value)}
+                placeholder="0" className="input-base w-full text-right text-sm" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-600 flex items-center gap-1 mb-1">
+                <Smartphone size={12} /> SINPE
+              </label>
+              <input type="number" min="0" value={montoSinpe} onChange={e => setMontoSinpe(e.target.value)}
+                placeholder="0" className="input-base w-full text-right text-sm" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-600 flex items-center gap-1 mb-1">
+                <CreditCard size={12} /> Tarjeta
+              </label>
+              <input type="number" min="0" value={montoTarjeta} onChange={e => setMontoTarjeta(e.target.value)}
+                placeholder="0" className="input-base w-full text-right text-sm" />
+            </div>
+
+            <div className={`flex justify-between items-center pt-2 border-t border-brand-200 text-sm ${sumaCorrecta ? 'text-emerald-700' : 'text-amber-700'}`}>
+              <span className="font-medium">Suma:</span>
+              <span className="font-bold">{formatColones(sumaPagos)}</span>
+            </div>
+            {!sumaCorrecta && restanteParaDividir > 0 && (
+              <div className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded">
+                Falta: {formatColones(restanteParaDividir)}
+              </div>
+            )}
+            {!sumaCorrecta && sumaPagos > total && (
+              <div className="text-xs text-red-700 bg-red-50 px-2 py-1 rounded">
+                Excede en: {formatColones(sumaPagos - total)}
+              </div>
+            )}
+
+            {efe > 0 && (
+              <div className="pt-2 border-t border-brand-200">
+                <label className="text-xs text-slate-600 mb-1 block">Efectivo recibido (para vuelto)</label>
+                <input type="number" value={montoRecibido} onChange={e => setMontoRecibido(e.target.value)}
+                  placeholder={efe.toString()} className="input-base w-full text-right text-sm" />
+                {recibido >= efe && recibido > 0 && vuelto > 0 && (
+                  <div className="mt-1 flex justify-between text-xs bg-emerald-50 px-2 py-1 rounded">
+                    <span className="text-emerald-700 font-medium">Vuelto:</span>
+                    <span className="font-bold text-emerald-800">{formatColones(vuelto)}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
         <button onClick={cobrar}
-          disabled={!carrito.length || cobrando || (metodoPago === 'efectivo' && recibido < total) || (subtotal === 0 && carrito.length === 0)}
+          disabled={!carrito.length || cobrando || (pagoDividido ? !sumaCorrecta : (metodoPago === 'efectivo' && recibido < total))}
           className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white py-4 rounded-lg font-semibold text-lg transition-colors">
           {cobrando ? 'Procesando...' : 'COBRAR (F3)'}
         </button>

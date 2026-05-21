@@ -1,11 +1,6 @@
-"""
-Modelos de la base de datos.
-"""
+"""Modelos SQLAlchemy del sistema POS."""
 from datetime import datetime
-from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Date,
-    ForeignKey, Boolean
-)
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -15,11 +10,12 @@ class Usuario(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
-    password_hash = Column(String(200), nullable=False)
-    nombre_completo = Column(String(100), nullable=True)
-    is_admin = Column(Boolean, default=True)
-    activo = Column(Boolean, default=True)
-    creado = Column(DateTime, default=datetime.now)
+    password_hash = Column(String(255), nullable=False)
+    nombre = Column(String(100), nullable=True)
+    rol = Column(String(20), nullable=False, default="admin")
+    debe_cambiar_password = Column(Boolean, nullable=False, default=False)
+    activo = Column(Boolean, nullable=False, default=True)
+    fecha_creacion = Column(DateTime, default=datetime.now)
 
 
 class Categoria(Base):
@@ -27,6 +23,7 @@ class Categoria(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(50), unique=True, nullable=False)
+    color = Column(String(20), nullable=True)
 
     productos = relationship("Producto", back_populates="categoria")
 
@@ -35,35 +32,27 @@ class Producto(Base):
     __tablename__ = "productos"
 
     id = Column(Integer, primary_key=True, index=True)
-    codigo = Column(String(50), unique=True, index=True, nullable=True)
-    nombre = Column(String(100), nullable=False, index=True)
-
-    tipo_venta = Column(String(10), nullable=False, default="unidad")
-    unidad_medida = Column(String(5), nullable=True)
-
+    codigo = Column(String(50), nullable=True, index=True)
+    nombre = Column(String(150), nullable=False, index=True)
+    tipo_venta = Column(String(20), nullable=False, default="unidad")
+    unidad_medida = Column(String(20), nullable=True)
     precio_venta = Column(Float, nullable=False)
     costo = Column(Float, nullable=False, default=0)
-
     stock = Column(Float, nullable=False, default=0)
     stock_minimo = Column(Float, nullable=False, default=5)
-
     categoria_id = Column(Integer, ForeignKey("categorias.id"), nullable=True)
-    fecha_vencimiento = Column(Date, nullable=True)
-    activo = Column(Boolean, default=True)
+    fecha_vencimiento = Column(String(20), nullable=True)
+    activo = Column(Boolean, nullable=False, default=True)
+    fecha_creacion = Column(DateTime, default=datetime.now)
 
-    # --- Jerarquía padre-hijo ---
-    # COMPRABLE = se compra al proveedor (saco), DERIVADO = se genera del padre (bolsita)
+    # Jerarquía padre/hijo (saco → bolsas)
     tipo_producto = Column(String(20), nullable=False, default="COMPRABLE")
-    # ID del producto padre (NULL si es padre/independiente)
     id_padre = Column(Integer, ForeignKey("productos.id"), nullable=True)
-    # Cuántas unidades del hijo salen de 1 padre (ej: 30 bolsas de 1kg de un saco de 30kg)
-    factor_conversion = Column(Float, nullable=True)
+    factor_conversion = Column(Float, nullable=False, default=1)
 
     categoria = relationship("Categoria", back_populates="productos")
     detalles_venta = relationship("DetalleVenta", back_populates="producto")
     detalles_compra = relationship("DetalleCompra", back_populates="producto")
-    # Relación: un producto puede tener hijos derivados
-    hijos = relationship("Producto", foreign_keys=[id_padre])
 
 
 class Venta(Base):
@@ -78,6 +67,10 @@ class Venta(Base):
     metodo_pago = Column(String(20), nullable=False)
     monto_recibido = Column(Float, nullable=True)
     vuelto = Column(Float, nullable=True, default=0)
+    # Pagos divididos
+    monto_efectivo = Column(Float, nullable=False, default=0)
+    monto_sinpe = Column(Float, nullable=False, default=0)
+    monto_tarjeta = Column(Float, nullable=False, default=0)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
 
     detalles = relationship(
@@ -106,6 +99,7 @@ class DetalleVenta(Base):
 
 
 class Compra(Base):
+    """Sistema viejo de compras (descontinuado, se mantiene la tabla para no romper FK)."""
     __tablename__ = "compras"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -156,7 +150,7 @@ class AperturaCaja(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     fecha = Column(DateTime, default=datetime.now, index=True)
-    monto = Column(Float, nullable=False)  # Dinero con que inicia la caja
+    monto = Column(Float, nullable=False, default=0)
     notas = Column(String(500), nullable=True)
 
 
@@ -165,14 +159,14 @@ class CierreCaja(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     fecha_cierre = Column(DateTime, default=datetime.now, index=True)
-    monto_apertura = Column(Float, default=0)   # Con cuánto inició la caja
-    total_ventas_efectivo = Column(Float, default=0)  # Ventas en efectivo del turno
-    total_esperado = Column(Float, nullable=False)   # apertura + ventas efectivo
-    total_real = Column(Float, nullable=False)       # Lo que contó el cajero
-    diferencia = Column(Float, nullable=False)       # real - esperado
-    total_efectivo = Column(Float, default=0)
-    total_sinpe = Column(Float, default=0)
-    total_tarjeta = Column(Float, default=0)
+    monto_apertura = Column(Float, nullable=False, default=0)
+    total_ventas_efectivo = Column(Float, nullable=False, default=0)
+    total_esperado = Column(Float, nullable=False, default=0)
+    total_real = Column(Float, nullable=False, default=0)
+    diferencia = Column(Float, nullable=False, default=0)
+    total_efectivo = Column(Float, nullable=False, default=0)
+    total_sinpe = Column(Float, nullable=False, default=0)
+    total_tarjeta = Column(Float, nullable=False, default=0)
     cantidad_ventas = Column(Integer, default=0)
     monto_bonificado = Column(Float, default=0)
     notas = Column(String(500), nullable=True)
@@ -183,4 +177,4 @@ class Configuracion(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     clave = Column(String(50), unique=True, nullable=False)
-    valor = Column(String(200), nullable=False)
+    valor = Column(String(500), nullable=False)

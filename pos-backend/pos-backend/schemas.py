@@ -1,8 +1,6 @@
-"""
-Schemas Pydantic para validación de entrada/salida.
-"""
-from datetime import datetime, date
-from typing import Optional, List, Literal
+"""Pydantic schemas para validación de entrada/salida."""
+from datetime import date, datetime
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -15,27 +13,33 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    usuario: "UsuarioOut"
+    usuario: Optional["UsuarioOut"] = None
+    debe_cambiar_password: bool = False
+    nombre: Optional[str] = None
+    username: Optional[str] = None
 
 
+class CambiarPasswordRequest(BaseModel):
+    password_actual: str
+    password_nuevo: str = Field(min_length=4)
+
+
+# ---------- USUARIOS ----------
 class UsuarioOut(BaseModel):
     id: int
     username: str
-    nombre_completo: Optional[str]
-    is_admin: bool
+    nombre: Optional[str]
+    rol: str
+    debe_cambiar_password: bool
 
     class Config:
         from_attributes = True
 
 
-class CambiarPasswordRequest(BaseModel):
-    password_actual: str
-    password_nueva: str = Field(min_length=6)
-
-
 # ---------- CATEGORIAS ----------
 class CategoriaBase(BaseModel):
     nombre: str
+    color: Optional[str] = None
 
 
 class CategoriaCreate(CategoriaBase):
@@ -50,24 +54,18 @@ class CategoriaOut(CategoriaBase):
 
 
 # ---------- PRODUCTOS ----------
-TipoVenta = Literal["unidad", "peso"]
-UnidadMedida = Literal["kg", "g"]
-TipoProducto = Literal["COMPRABLE", "DERIVADO"]
-
-
 class ProductoBase(BaseModel):
     codigo: Optional[str] = None
     nombre: str
-    tipo_venta: TipoVenta = "unidad"
-    unidad_medida: Optional[UnidadMedida] = None
-    precio_venta: float = Field(gt=0)
+    tipo_venta: str = "unidad"
+    unidad_medida: Optional[str] = None
+    precio_venta: float = Field(ge=0)
     costo: float = Field(ge=0, default=0)
     stock: float = Field(ge=0, default=0)
     stock_minimo: float = Field(ge=0, default=5)
     categoria_id: Optional[int] = None
-    fecha_vencimiento: Optional[date] = None
-    activo: bool = True
-    tipo_producto: TipoProducto = "COMPRABLE"
+    fecha_vencimiento: Optional[str] = None
+    tipo_producto: str = "COMPRABLE"
     id_padre: Optional[int] = None
     factor_conversion: Optional[float] = None
 
@@ -79,22 +77,37 @@ class ProductoCreate(ProductoBase):
 class ProductoUpdate(BaseModel):
     codigo: Optional[str] = None
     nombre: Optional[str] = None
-    tipo_venta: Optional[TipoVenta] = None
-    unidad_medida: Optional[UnidadMedida] = None
+    tipo_venta: Optional[str] = None
+    unidad_medida: Optional[str] = None
     precio_venta: Optional[float] = None
     costo: Optional[float] = None
     stock: Optional[float] = None
     stock_minimo: Optional[float] = None
     categoria_id: Optional[int] = None
-    fecha_vencimiento: Optional[date] = None
+    fecha_vencimiento: Optional[str] = None
     activo: Optional[bool] = None
-    tipo_producto: Optional[TipoProducto] = None
+    tipo_producto: Optional[str] = None
     id_padre: Optional[int] = None
     factor_conversion: Optional[float] = None
 
 
-class ProductoOut(ProductoBase):
+class ProductoOut(BaseModel):
     id: int
+    codigo: Optional[str] = None
+    nombre: str
+    tipo_venta: str = "unidad"
+    unidad_medida: Optional[str] = None
+    precio_venta: float
+    costo: float = 0
+    stock: float = 0
+    stock_minimo: float = 5
+    categoria_id: Optional[int] = None
+    fecha_vencimiento: Optional[str] = None
+    activo: bool = True
+    fecha_creacion: Optional[datetime] = None
+    tipo_producto: str = "COMPRABLE"
+    id_padre: Optional[int] = None
+    factor_conversion: Optional[float] = None
     categoria: Optional[CategoriaOut] = None
     nombre_padre: Optional[str] = None
 
@@ -103,23 +116,17 @@ class ProductoOut(ProductoBase):
 
 
 class DesgloseItem(BaseModel):
-    """Un item del desglose multiformato: cuántas unidades del padre convertir en este hijo."""
     hijo_id: int = Field(gt=0)
-    cantidad_padres: float = Field(gt=0, description="Unidades equivalentes del padre destinadas a este hijo (puede ser fraccional)")
+    cantidad_padres: float = Field(gt=0)
 
 
 class DesglosarRequest(BaseModel):
-    """
-    Desglose simple (un solo hijo): cantidad_padres + hijo_id.
-    Desglose multi-formato: lista de items.
-    """
     cantidad_padres: Optional[float] = Field(default=None, gt=0)
     hijo_id: Optional[int] = Field(default=None, gt=0)
     items: Optional[List[DesgloseItem]] = None
 
 
 class VincularPadreRequest(BaseModel):
-    """Vincular un producto huérfano como hijo de otro."""
     id_padre: int = Field(gt=0)
     factor_conversion: float = Field(gt=0)
 
@@ -129,14 +136,18 @@ class DetalleVentaCreate(BaseModel):
     producto_id: int
     cantidad: float = Field(gt=0)
     es_regalia: bool = False
-    descuento_monto: float = Field(ge=0, default=0)      # Descuento en ₡ sobre este item
-    descuento_porcentaje: float = Field(ge=0, le=100, default=0)  # Descuento en % sobre este item
+    descuento_monto: float = Field(ge=0, default=0)
+    descuento_porcentaje: float = Field(ge=0, le=100, default=0)
 
 
 class VentaCreate(BaseModel):
     detalles: List[DetalleVentaCreate]
-    metodo_pago: str
+    metodo_pago: Optional[str] = None
     monto_recibido: Optional[float] = None
+    # Pagos divididos
+    monto_efectivo: float = Field(ge=0, default=0)
+    monto_sinpe: float = Field(ge=0, default=0)
+    monto_tarjeta: float = Field(ge=0, default=0)
 
 
 class DetalleVentaOut(BaseModel):
@@ -164,26 +175,29 @@ class VentaOut(BaseModel):
     metodo_pago: str
     monto_recibido: Optional[float]
     vuelto: Optional[float]
+    monto_efectivo: float = 0
+    monto_sinpe: float = 0
+    monto_tarjeta: float = 0
     detalles: List[DetalleVentaOut] = []
 
     class Config:
         from_attributes = True
 
 
-# ---------- COMPRAS ----------
+# ---------- COMPRAS (descontinuado) ----------
 class DetalleCompraCreate(BaseModel):
     producto_id: int
     cantidad: float = Field(gt=0)
     costo_unit: float = Field(ge=0)
-    es_regalia: bool = False  # Si es True, costo es 0 y no afecta el promedio
+    es_regalia: bool = False
 
 
 class CompraCreate(BaseModel):
     proveedor: Optional[str] = None
     detalles: List[DetalleCompraCreate]
     descuento_monto: float = Field(ge=0, default=0)
-    iva_monto: float = Field(ge=0, default=0)        # IVA en colones
-    iva_porcentaje: float = Field(ge=0, le=100, default=0)  # IVA en %
+    iva_monto: float = Field(ge=0, default=0)
+    iva_porcentaje: float = Field(ge=0, le=100, default=0)
 
 
 class DetalleCompraOut(BaseModel):
@@ -269,7 +283,7 @@ class CierreCajaOut(BaseModel):
     total_sinpe: float
     total_tarjeta: float
     cantidad_ventas: int
-    monto_bonificado: float = 0  # Total regalías
+    monto_bonificado: float = 0
     notas: Optional[str]
 
     class Config:
@@ -287,50 +301,10 @@ class ResumenCaja(BaseModel):
     tiene_apertura: bool = False
     monto_bonificado: float = 0
     monto_descuentos: float = 0
-    fecha_inicio_turno: Optional[datetime] = None  # Desde cuándo cuenta el turno
+    fecha_inicio_turno: Optional[datetime] = None
 
 
 # ---------- REPORTES ----------
-class ProductoMasVendido(BaseModel):
-    producto_id: int
-    nombre: str
-    cantidad_total: float
-    monto_total: float
-
-
-class ReporteVentas(BaseModel):
-    fecha_inicio: date
-    fecha_fin: date
-    total_ventas: float
-    cantidad_ventas: int
-    ganancia_bruta: float
-    productos_top: List[ProductoMasVendido]
-
-
-class VentaPorDia(BaseModel):
-    fecha: date
-    total: float
-    cantidad: int
-    ganancia: float
-
-
-class GananciaPorDia(BaseModel):
-    fecha: date
-    ventas: float
-    ganancia_bruta: float
-    compras: float
-    flujo_neto: float  # ganancia_bruta - compras
-
-
-class GananciaPorMes(BaseModel):
-    año: int
-    mes: int
-    ventas: float
-    ganancia_bruta: float
-    compras: float
-    flujo_neto: float
-
-
 class GananciaResumen(BaseModel):
     fecha_inicio: date
     fecha_fin: date
@@ -342,7 +316,74 @@ class GananciaResumen(BaseModel):
     cantidad_compras: int
     total_descuentos: float = 0
     total_regalias: float = 0
-    costo_regalias: float = 0    # Costo absorbido por regalías
+    costo_regalias: float = 0
+
+
+class GananciaPorDia(BaseModel):
+    fecha: date
+    ventas: float
+    ganancia_bruta: float
+    compras: float
+    flujo_neto: float
+
+
+class GananciaPorMes(BaseModel):
+    año: int
+    mes: int
+    ventas: float
+    ganancia_bruta: float
+    compras: float
+    flujo_neto: float
+
+
+class ProductoMasVendido(BaseModel):
+    producto_id: int
+    nombre: str
+    cantidad_total: float
+    monto_total: float
+
+
+class ReporteVentas(BaseModel):
+    fecha_inicio: date
+    fecha_fin: date
+    total_ventas: float = 0
+    cantidad_ventas: int = 0
+    ganancia_bruta: float = 0
+    productos_top: List[ProductoMasVendido] = []
+
+
+class VentaPorDia(BaseModel):
+    fecha: date
+    total: float = 0
+    cantidad: int = 0
+    ganancia: float = 0
+
+
+class VentaPorMes(BaseModel):
+    año: int
+    mes: int
+    total: float = 0
+    cantidad: int = 0
+    ganancia: float = 0
+
+
+class VentaPorHora(BaseModel):
+    hora: int
+    total: float = 0
+    cantidad: int = 0
+
+
+class TopProductos(BaseModel):
+    fecha_inicio: date
+    fecha_fin: date
+    productos: List[ProductoMasVendido]
+
+
+class CategoriaVendida(BaseModel):
+    categoria_id: Optional[int]
+    nombre: str
+    total: float
+    cantidad: float
 
 
 # ---------- CONFIGURACION ----------

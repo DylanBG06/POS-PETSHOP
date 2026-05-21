@@ -1,16 +1,8 @@
-"""
-Endpoints de caja: apertura, resumen y cierre.
-
-Flujo correcto:
-  1. Al inicio del turno: registrar APERTURA con el dinero en caja
-  2. Durante el día: ventas se acumulan
-  3. Al cierre: esperado = apertura + ventas_efectivo
-                diferencia = real_contado - esperado
-"""
+"""Endpoints de caja: apertura, cierre, resumen, historial."""
 from datetime import date, datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 import models
@@ -24,37 +16,23 @@ router = APIRouter(
 )
 
 
-def _inicio_periodo(db: Session, dia: date) -> datetime:
-    """Devuelve desde cuándo contar ventas (desde último cierre, o medianoche)."""
-    inicio_dia = datetime.combine(dia, datetime.min.time())
-    fin_dia = inicio_dia + timedelta(days=1)
-
-    ultimo_cierre = (
+def _ultimo_cierre_fecha(db: Session) -> Optional[datetime]:
+    """Devuelve la fecha del último cierre, o None si nunca se ha cerrado."""
+    ultimo = (
         db.query(models.CierreCaja)
-        .filter(
-            models.CierreCaja.fecha_cierre >= inicio_dia,
-            models.CierreCaja.fecha_cierre < fin_dia,
-        )
         .order_by(models.CierreCaja.fecha_cierre.desc())
         .first()
     )
-    return ultimo_cierre.fecha_cierre if ultimo_cierre else inicio_dia
+    return ultimo.fecha_cierre if ultimo else None
 
 
-def _apertura_actual(db: Session, dia: date) -> Optional[models.AperturaCaja]:
-    """Busca la apertura del turno actual (después del último cierre)."""
-    desde = _inicio_periodo(db, dia)
-    fin_dia = datetime.combine(dia, datetime.min.time()) + timedelta(days=1)
-
-    return (
-        db.query(models.AperturaCaja)
-        .filter(
-            models.AperturaCaja.fecha >= desde,
-            models.AperturaCaja.fecha < fin_dia,
-        )
-        .order_by(models.AperturaCaja.fecha.desc())
-        .first()
-    )
+def _apertura_actual(db: Session) -> Optional[models.AperturaCaja]:
+    """Devuelve la apertura del turno actual (posterior al último cierre)."""
+    ultimo_cierre = _ultimo_cierre_fecha(db)
+    query = db.query(models.AperturaCaja)
+    if ultimo_cierre:
+        query = query.filter(models.AperturaCaja.fecha > ultimo_cierre)
+    return query.order_by(models.AperturaCaja.fecha.desc()).first()
 
 
 def _calcular_resumen(db: Session, desde: datetime, hasta: datetime, apertura: Optional[models.AperturaCaja]) -> schemas.ResumenCaja:
@@ -64,9 +42,10 @@ def _calcular_resumen(db: Session, desde: datetime, hasta: datetime, apertura: O
     ).all()
 
     total_dia = sum(v.total for v in ventas)
-    total_efectivo = sum(v.total for v in ventas if v.metodo_pago == "efectivo")
-    total_sinpe = sum(v.total for v in ventas if v.metodo_pago == "sinpe")
-    total_tarjeta = sum(v.total for v in ventas if v.metodo_pago == "tarjeta")
+    # Usar los campos divididos en lugar de filtrar por metodo_pago
+    total_efectivo = sum(getattr(v, 'monto_efectivo', 0) or 0 for v in ventas)
+    total_sinpe = sum(getattr(v, 'monto_sinpe', 0) or 0 for v in ventas)
+    total_tarjeta = sum(getattr(v, 'monto_tarjeta', 0) or 0 for v in ventas)
     monto_bonificado = sum(getattr(v, 'monto_regalias', 0) or 0 for v in ventas)
     monto_descuentos = sum(getattr(v, 'descuento', 0) or 0 for v in ventas)
 
@@ -88,84 +67,89 @@ def _calcular_resumen(db: Session, desde: datetime, hasta: datetime, apertura: O
     )
 
 
-# ─── APERTURA ────────────────────────────────────────────────
-
 @router.post("/apertura", response_model=schemas.AperturaCajaOut, status_code=201)
-def registrar_apertura(apertura: schemas.AperturaCajaCreate, db: Session = Depends(get_db)):
-    """Registrar con cuánto dinero inicia la caja."""
-    hoy = date.today()
-
-    # No permitir doble apertura en el mismo turno
-    if _apertura_actual(db, hoy):
+def registrar_apertura(req: schemas.AperturaCajaCreate, db: Session = Depends(get_db)):
+    """Registra el monto con el que abre la caja al inicio del turno."""
+    actual = _apertura_actual(db)
+    if actual:
         raise HTTPException(
             status_code=400,
-            detail="Ya hay una apertura registrada para este turno. Hacé cierre primero para abrir un turno nuevo."
+            detail=f"Ya hay una apertura registrada en este turno (₡{actual.monto}). Hacé un cierre primero."
         )
 
-    db_apertura = models.AperturaCaja(
-        monto=apertura.monto,
-        notas=apertura.notas,
-    )
+    db_apertura = models.AperturaCaja(monto=req.monto, notas=req.notas)
     db.add(db_apertura)
     db.commit()
     db.refresh(db_apertura)
     return db_apertura
 
 
-@router.get("/apertura-hoy", response_model=Optional[schemas.AperturaCajaOut])
-def apertura_hoy(db: Session = Depends(get_db)):
-    """Devuelve la apertura del turno actual, o null si no hay."""
-    return _apertura_actual(db, date.today())
+@router.get("/apertura-hoy")
+def obtener_apertura_hoy(db: Session = Depends(get_db)):
+    """Devuelve la apertura del turno actual o 404 si no hay."""
+    apertura = _apertura_actual(db)
+    if not apertura:
+        raise HTTPException(status_code=404, detail="No hay apertura registrada")
+    return {
+        "id": apertura.id,
+        "fecha": apertura.fecha,
+        "monto": apertura.monto,
+        "notas": apertura.notas,
+    }
 
-
-# ─── RESUMEN ─────────────────────────────────────────────────
 
 @router.get("/resumen-hoy", response_model=schemas.ResumenCaja)
 def resumen_hoy(db: Session = Depends(get_db)):
-    hoy = date.today()
-    desde = _inicio_periodo(db, hoy)
-    hasta = datetime.combine(hoy, datetime.min.time()) + timedelta(days=1)
-    apertura = _apertura_actual(db, hoy)
+    """Resumen desde el último cierre (o desde el inicio del día si no hay cierres)."""
+    apertura = _apertura_actual(db)
+    ultimo_cierre = _ultimo_cierre_fecha(db)
+
+    if ultimo_cierre:
+        desde = ultimo_cierre
+    else:
+        desde = datetime.combine(date.today(), datetime.min.time())
+
+    hasta = datetime.now() + timedelta(seconds=1)
     return _calcular_resumen(db, desde, hasta, apertura)
 
 
-# ─── CIERRE ──────────────────────────────────────────────────
-
+@router.post("/cierre", response_model=schemas.CierreCajaOut, status_code=201)
 @router.post("/cerrar", response_model=schemas.CierreCajaOut, status_code=201)
-def cerrar_caja(cierre: schemas.CierreCajaCreate, db: Session = Depends(get_db)):
-    hoy = date.today()
-    desde = _inicio_periodo(db, hoy)
-    hasta = datetime.combine(hoy, datetime.min.time()) + timedelta(days=1)
-    apertura = _apertura_actual(db, hoy)
-    resumen = _calcular_resumen(db, desde, hasta, apertura)
+def hacer_cierre(req: schemas.CierreCajaCreate, db: Session = Depends(get_db)):
+    """Cierra el turno comparando el efectivo contado con el esperado."""
+    apertura = _apertura_actual(db)
+    ultimo_cierre = _ultimo_cierre_fecha(db)
 
-    if resumen.cantidad_ventas == 0:
-        raise HTTPException(status_code=400, detail="No hay ventas para cerrar")
+    if ultimo_cierre:
+        desde = ultimo_cierre
+    else:
+        desde = datetime.combine(date.today(), datetime.min.time())
+
+    hasta = datetime.now() + timedelta(seconds=1)
+    resumen = _calcular_resumen(db, desde, hasta, apertura)
 
     monto_apertura = apertura.monto if apertura else 0
     total_esperado = round(monto_apertura + resumen.total_efectivo, 2)
-    diferencia = round(cierre.total_real - total_esperado, 2)
+    diferencia = round(req.total_real - total_esperado, 2)
 
     db_cierre = models.CierreCaja(
         monto_apertura=monto_apertura,
         total_ventas_efectivo=resumen.total_efectivo,
         total_esperado=total_esperado,
-        total_real=cierre.total_real,
+        total_real=req.total_real,
         diferencia=diferencia,
         total_efectivo=resumen.total_efectivo,
         total_sinpe=resumen.total_sinpe,
         total_tarjeta=resumen.total_tarjeta,
         cantidad_ventas=resumen.cantidad_ventas,
         monto_bonificado=resumen.monto_bonificado,
-        notas=cierre.notas,
+        notas=req.notas,
     )
     db.add(db_cierre)
     db.commit()
     db.refresh(db_cierre)
     return db_cierre
 
-
-# ─── LISTADOS ────────────────────────────────────────────────
 
 @router.get("/cierres", response_model=List[schemas.CierreCajaOut])
 def listar_cierres(limit: int = 30, db: Session = Depends(get_db)):
@@ -179,17 +163,11 @@ def listar_cierres(limit: int = 30, db: Session = Depends(get_db)):
 
 @router.get("/cierres/{cierre_id}/ventas")
 def ventas_de_cierre(cierre_id: int, db: Session = Depends(get_db)):
-    """
-    Devuelve las ventas que corresponden a un cierre específico.
-    Busca ventas entre el cierre anterior y este cierre.
-    """
-    from sqlalchemy.orm import joinedload
-
+    """Devuelve las ventas y productos vendidos de un cierre específico."""
     cierre = db.query(models.CierreCaja).filter(models.CierreCaja.id == cierre_id).first()
     if not cierre:
         raise HTTPException(status_code=404, detail="Cierre no encontrado")
 
-    # Buscar el cierre anterior al actual
     cierre_anterior = (
         db.query(models.CierreCaja)
         .filter(models.CierreCaja.fecha_cierre < cierre.fecha_cierre)
@@ -205,8 +183,7 @@ def ventas_de_cierre(cierre_id: int, db: Session = Depends(get_db)):
     ventas = (
         db.query(models.Venta)
         .options(
-            joinedload(models.Venta.detalles)
-            .joinedload(models.DetalleVenta.producto)
+            joinedload(models.Venta.detalles).joinedload(models.DetalleVenta.producto)
         )
         .filter(
             models.Venta.fecha >= desde,
@@ -216,7 +193,6 @@ def ventas_de_cierre(cierre_id: int, db: Session = Depends(get_db)):
         .all()
     )
 
-    # Agrupar productos vendidos
     productos = {}
     for v in ventas:
         for d in v.detalles:
