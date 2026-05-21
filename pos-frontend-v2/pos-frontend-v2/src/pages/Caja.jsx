@@ -14,6 +14,7 @@ export default function Caja() {
   const [modalApertura, setModalApertura] = useState(false)
   const [modalCierre, setModalCierre] = useState(false)
   const [detalleCierre, setDetalleCierre] = useState(null)
+  const [ventaDetalle, setVentaDetalle] = useState(null)
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -163,45 +164,32 @@ export default function Caja() {
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide sticky top-0">
               <tr>
                 <th className="text-left py-2.5 px-3 font-medium">Hora</th>
-                <th className="text-left py-2.5 px-3 font-medium">Productos</th>
                 <th className="text-left py-2.5 px-3 font-medium">Método</th>
                 <th className="text-right py-2.5 px-3 font-medium">Efectivo</th>
                 <th className="text-right py-2.5 px-3 font-medium">SINPE</th>
                 <th className="text-right py-2.5 px-3 font-medium">Tarjeta</th>
                 <th className="text-right py-2.5 px-3 font-medium">Total</th>
+                <th className="py-2.5 px-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {ventasHoy.length === 0 ? (
                 <tr><td colSpan={7} className="py-8 text-center text-slate-400">Sin ventas hoy</td></tr>
-              ) : ventasHoy.map(v => {
-                const items = v.detalle || []
-                const tooltip = items.map(d => `${Math.floor(d.cantidad)}x ${d.nombre}${d.es_regalia ? ' (regalía)' : ''}`).join('\n')
-                return (
-                  <tr key={v.id} className="hover:bg-slate-50/80">
-                    <td className="py-2 px-3 text-xs whitespace-nowrap">{formatFechaHora(v.fecha)}</td>
-                    <td className="py-2 px-3 text-xs max-w-xs">
-                      {items.length === 0 ? <span className="text-slate-400">—</span> : (
-                        <div title={tooltip} className="truncate">
-                          {items.map((d, i) => (
-                            <span key={i}>
-                              {i > 0 && ', '}
-                              <span className={d.es_regalia ? 'text-pink-700' : ''}>
-                                {Math.floor(d.cantidad)}× {d.nombre}
-                              </span>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-2 px-3 text-xs capitalize">{v.metodo_pago}</td>
-                    <td className="py-2 px-3 text-right text-xs">{v.monto_efectivo > 0 ? formatColones(v.monto_efectivo) : '—'}</td>
-                    <td className="py-2 px-3 text-right text-xs">{v.monto_sinpe > 0 ? formatColones(v.monto_sinpe) : '—'}</td>
-                    <td className="py-2 px-3 text-right text-xs">{v.monto_tarjeta > 0 ? formatColones(v.monto_tarjeta) : '—'}</td>
-                    <td className="py-2 px-3 text-right font-medium">{formatColones(v.total)}</td>
-                  </tr>
-                )
-              })}
+              ) : ventasHoy.map(v => (
+                <tr key={v.id} className="hover:bg-slate-50/80">
+                  <td className="py-2 px-3 text-xs whitespace-nowrap">{formatFechaHora(v.fecha)}</td>
+                  <td className="py-2 px-3 text-xs capitalize">{v.metodo_pago}</td>
+                  <td className="py-2 px-3 text-right text-xs">{v.monto_efectivo > 0 ? formatColones(v.monto_efectivo) : '—'}</td>
+                  <td className="py-2 px-3 text-right text-xs">{v.monto_sinpe > 0 ? formatColones(v.monto_sinpe) : '—'}</td>
+                  <td className="py-2 px-3 text-right text-xs">{v.monto_tarjeta > 0 ? formatColones(v.monto_tarjeta) : '—'}</td>
+                  <td className="py-2 px-3 text-right font-medium">{formatColones(v.total)}</td>
+                  <td className="py-2 px-3 text-right">
+                    <button onClick={() => setVentaDetalle(v)} className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded" title="Ver detalle">
+                      <Eye size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -261,6 +249,7 @@ export default function Caja() {
       <AperturaModal open={modalApertura} onClose={() => setModalApertura(false)} onGuardar={() => { setModalApertura(false); cargar() }} />
       <CierreModal open={modalCierre} onClose={() => setModalCierre(false)} onGuardar={() => { setModalCierre(false); cargar() }} resumen={resumen} apertura={apertura} />
       <DetalleCierreModal detalle={detalleCierre} onClose={() => setDetalleCierre(null)} />
+      <DetalleVentaModal venta={ventaDetalle} onClose={() => setVentaDetalle(null)} />
     </div>
   )
 }
@@ -533,6 +522,109 @@ function DetalleCierreModal({ detalle, onClose }) {
             </div>
           </div>
         )}
+
+        <div className="flex justify-end pt-2">
+          <button onClick={onClose} className="btn-secondary">Cerrar</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function DetalleVentaModal({ venta, onClose }) {
+  if (!venta) return null
+
+  const safe = (n) => Number(n) || 0
+  const items = venta.detalles || []
+  const subtotal = safe(venta.subtotal)
+  const descuento = safe(venta.descuento)
+  const total = safe(venta.total)
+
+  return (
+    <Modal open={!!venta} onClose={onClose} title={`Venta #${venta.id}`} maxWidth="max-w-2xl">
+      <div className="space-y-4">
+        <div className="text-xs text-slate-500">
+          {venta.fecha ? formatFechaHora(venta.fecha) : '—'} · Método: <span className="capitalize font-medium text-slate-700">{venta.metodo_pago || '—'}</span>
+        </div>
+
+        {/* Desglose pago si es mixto */}
+        {venta.metodo_pago === 'mixto' && (
+          <div className="grid grid-cols-3 gap-2">
+            {safe(venta.monto_efectivo) > 0 && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2 text-center">
+                <div className="text-xs font-medium text-emerald-700 flex items-center justify-center gap-1"><Banknote size={12} /> EFECTIVO</div>
+                <div className="text-sm font-bold text-emerald-800">{formatColones(safe(venta.monto_efectivo))}</div>
+              </div>
+            )}
+            {safe(venta.monto_sinpe) > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-center">
+                <div className="text-xs font-medium text-blue-700 flex items-center justify-center gap-1"><Smartphone size={12} /> SINPE</div>
+                <div className="text-sm font-bold text-blue-800">{formatColones(safe(venta.monto_sinpe))}</div>
+              </div>
+            )}
+            {safe(venta.monto_tarjeta) > 0 && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-2 text-center">
+                <div className="text-xs font-medium text-purple-700 flex items-center justify-center gap-1"><CreditCard size={12} /> TARJETA</div>
+                <div className="text-sm font-bold text-purple-800">{formatColones(safe(venta.monto_tarjeta))}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Lista de productos */}
+        <div>
+          <div className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Productos vendidos</div>
+          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="text-left py-2 px-3 font-medium">Producto</th>
+                  <th className="text-right py-2 px-3 font-medium">Cant.</th>
+                  <th className="text-right py-2 px-3 font-medium">Precio</th>
+                  <th className="text-right py-2 px-3 font-medium">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {items.length === 0 ? (
+                  <tr><td colSpan={4} className="py-4 text-center text-slate-400 text-xs">Sin productos</td></tr>
+                ) : items.map((d, i) => (
+                  <tr key={i} className={d.es_regalia ? 'bg-pink-50/50' : ''}>
+                    <td className="py-1.5 px-3">
+                      {d.producto?.nombre || '?'}
+                      {d.es_regalia && <span className="ml-2 text-xs text-pink-700 font-medium flex items-center gap-0.5 inline-flex"><Gift size={10} /> regalía</span>}
+                    </td>
+                    <td className="py-1.5 px-3 text-right">{Math.floor(safe(d.cantidad))}</td>
+                    <td className="py-1.5 px-3 text-right text-xs">{d.es_regalia ? '—' : formatColones(safe(d.precio_unit))}</td>
+                    <td className="py-1.5 px-3 text-right font-medium">{d.es_regalia ? '—' : formatColones(safe(d.subtotal))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Totales */}
+        <div className="bg-slate-50 rounded-lg p-3 space-y-1 text-sm">
+          {descuento > 0 && (
+            <>
+              <div className="flex justify-between"><span className="text-slate-600">Subtotal:</span><span className="font-medium">{formatColones(subtotal)}</span></div>
+              <div className="flex justify-between text-emerald-700"><span>Descuento:</span><span className="font-medium">-{formatColones(descuento)}</span></div>
+            </>
+          )}
+          {safe(venta.monto_regalias) > 0 && (
+            <div className="flex justify-between text-pink-700"><span className="flex items-center gap-1"><Gift size={12} /> Bonificado:</span><span className="font-medium">{formatColones(safe(venta.monto_regalias))}</span></div>
+          )}
+          <div className="flex justify-between pt-1 border-t border-slate-300 mt-1">
+            <span className="font-semibold text-slate-700">TOTAL:</span>
+            <span className="font-bold text-brand-700 text-lg">{formatColones(total)}</span>
+          </div>
+          {safe(venta.monto_recibido) > 0 && venta.metodo_pago === 'efectivo' && (
+            <>
+              <div className="flex justify-between text-xs text-slate-500"><span>Recibido:</span><span>{formatColones(safe(venta.monto_recibido))}</span></div>
+              <div className="flex justify-between text-xs text-slate-500"><span>Vuelto:</span><span>{formatColones(safe(venta.vuelto))}</span></div>
+            </>
+          )}
+        </div>
 
         <div className="flex justify-end pt-2">
           <button onClick={onClose} className="btn-secondary">Cerrar</button>
